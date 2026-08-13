@@ -190,7 +190,7 @@ def test_socket_answers_directly_when_the_user_has_no_documents(client):
     assert answer["done"] is True
 
 
-def test_socket_reports_a_built_prompt_when_context_was_found(client):
+def test_the_assembled_prompt_reaches_the_model_when_context_was_found(client, fake_chat):
     alice = register(client, "alice@example.com")
     client.post("/documents", headers=alice["headers"], data={"text": "The code is HELIOTROPE-9. " * 10})
     session_id = client.post("/chat/sessions", headers=alice["headers"], json={}).json()["id"]
@@ -200,10 +200,15 @@ def test_socket_reports_a_built_prompt_when_context_was_found(client):
         socket.receive_json()
 
         socket.send_text(json.dumps({"type": "message", "content": "What is the code?"}))
-        socket.receive_json()  # sources
-        frame = socket.receive_json()
+        sources = socket.receive_json()
+        started = socket.receive_json()
 
-    assert frame["type"] == "prompt_ready"
-    assert frame["context_chunks"] >= 1
-    # system + question, with no prior turns yet.
-    assert frame["message_count"] == 2
+    assert sources["chunks"]
+    assert started["type"] == "start"
+
+    # System prompt plus the context-and-question turn; no prior turns yet,
+    # since persistence lands in T3.6.
+    messages = fake_chat.calls[0]
+    assert len(messages) == 2
+    assert messages[0]["role"] == "system"
+    assert "HELIOTROPE-9" in messages[-1]["content"]

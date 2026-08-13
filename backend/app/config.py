@@ -36,6 +36,20 @@ class Settings(BaseSettings):
     # re-uploading every document. See the README.
     embedding_provider: Literal["openai", "local"] = "openai"
 
+    # Which backend generates answers. Groq is OpenAI-compatible, so both use
+    # the same client with a different base URL. Unlike embeddings, switching
+    # here is free: nothing generated is stored, so no re-upload is needed.
+    chat_provider: Literal["openai", "groq"] = "openai"
+    groq_api_key: str | None = None
+    groq_chat_model: str = "llama-3.3-70b-versatile"
+
+    # Reliability bounds for the provider (architecture doc section 7.6).
+    llm_timeout_seconds: float = 60.0
+    llm_stream_timeout_seconds: float = 120.0
+    llm_max_attempts: int = 3
+    llm_retry_base_seconds: float = 0.5
+    llm_temperature: float = 0.2
+
     # Storage
     database_url: str = "sqlite:///./cortex.db"
     chroma_persist_dir: str = "./chroma_data"

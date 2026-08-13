@@ -25,6 +25,7 @@ from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.services import vector_store  # noqa: E402
 from app.services.embeddings import set_embedding_provider  # noqa: E402
+from app.services.llm import ChatError, set_chat_provider  # noqa: E402
 
 EMBEDDING_DIMENSIONS = 32
 
@@ -49,6 +50,64 @@ class FakeEmbeddingProvider:
         raw = [digest[i % len(digest)] / 255.0 for i in range(EMBEDDING_DIMENSIONS)]
         magnitude = sum(value * value for value in raw) ** 0.5 or 1.0
         return [value / magnitude for value in raw]
+
+
+DEFAULT_FAKE_TOKENS = ["The ", "launch ", "code ", "is ", "HELIOTROPE-9", "."]
+
+
+class FakeChatProvider:
+    """Scripted streaming provider, so the suite never spends real tokens.
+
+    `fail_at` raises after that many fragments have been yielded; 0 fails before
+    any output, which is the only point at which a retry is permitted.
+    """
+
+    def __init__(
+        self,
+        tokens: list[str] | None = None,
+        fail_at: int | None = None,
+        transient: bool = False,
+        message: str = "provider exploded",
+    ) -> None:
+        self.tokens = DEFAULT_FAKE_TOKENS if tokens is None else tokens
+        self.fail_at = fail_at
+        self.transient = transient
+        self.message = message
+        self.calls: list[list[dict[str, str]]] = []
+
+    def stream(self, messages):
+        self.calls.append(messages)
+
+        for index, token in enumerate(self.tokens):
+            if self.fail_at is not None and index == self.fail_at:
+                raise ChatError(self.message, transient=self.transient)
+            yield token
+
+        if self.fail_at is not None and self.fail_at >= len(self.tokens):
+            raise ChatError(self.message, transient=self.transient)
+
+
+class RecoveringChatProvider:
+    """Fails transiently on the first attempt, then succeeds."""
+
+    def __init__(self, tokens: list[str] | None = None) -> None:
+        self.tokens = DEFAULT_FAKE_TOKENS if tokens is None else tokens
+        self.attempts = 0
+
+    def stream(self, messages):
+        self.attempts += 1
+        if self.attempts == 1:
+            raise ChatError("temporary upstream failure", transient=True)
+        yield from self.tokens
+
+
+@pytest.fixture(autouse=True)
+def fake_chat():
+    """Every test gets the scripted provider unless it swaps in its own."""
+    provider = FakeChatProvider()
+    set_chat_provider(provider)
+    yield provider
+    set_chat_provider(None)
 
 
 @pytest.fixture(autouse=True)

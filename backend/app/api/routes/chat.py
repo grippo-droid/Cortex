@@ -1,5 +1,6 @@
 """Chat routes: session management over HTTP, and the streaming socket."""
 
+import asyncio
 from dataclasses import dataclass
 
 from fastapi import (
@@ -23,7 +24,8 @@ from app.schemas.chat import (
     ChatSessionRead,
     MessageRead,
 )
-from app.services import chat_service, document_service, prompting, retrieval
+from app.config import settings
+from app.services import chat_service, document_service, llm, prompting, retrieval
 from app.services.embeddings import EmbeddingError
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -33,6 +35,68 @@ SESSION_NOT_FOUND_DETAIL = "Chat session not found."
 # One reason for every refusal. A caller must not be able to tell a bad token
 # from a session that is not theirs from a session that does not exist.
 WS_REJECT_REASON = "Unauthorised."
+
+
+_STREAM_END = object()
+
+
+async def _stream_answer(
+    websocket: WebSocket, messages: list[dict[str, str]]
+) -> tuple[str, str | None]:
+    """Stream a completion to the socket. Returns (text so far, error or None).
+
+    The provider's stream is a synchronous generator. Iterating it directly in
+    this coroutine would block the event loop between every token, stalling
+    every other connected socket for the length of the answer.
+    `run_in_threadpool` does not solve that either: it awaits one call, whereas
+    this yields repeatedly over several seconds.
+
+    So the generator runs on a worker thread and hands fragments back through an
+    asyncio queue, which this coroutine drains. The event loop stays free
+    throughout, and two people can chat at the same time without either waiting
+    on the other.
+    """
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def produce() -> None:
+        try:
+            for fragment in llm.stream_completion(messages):
+                loop.call_soon_threadsafe(queue.put_nowait, fragment)
+        except Exception as exc:  # surfaced to the client below
+            loop.call_soon_threadsafe(queue.put_nowait, exc)
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, _STREAM_END)
+
+    loop.run_in_executor(None, produce)
+
+    parts: list[str] = []
+    error: str | None = None
+    deadline = loop.time() + settings.llm_stream_timeout_seconds
+
+    while True:
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            error = "The model took too long to respond."
+            break
+
+        try:
+            item = await asyncio.wait_for(queue.get(), timeout=remaining)
+        except TimeoutError:
+            error = "The model took too long to respond."
+            break
+
+        if item is _STREAM_END:
+            break
+
+        if isinstance(item, Exception):
+            error = str(item)
+            continue  # the sentinel follows, ending the loop
+
+        parts.append(item)
+        await websocket.send_json({"type": "token", "content": item})
+
+    return "".join(parts), error
 
 
 @dataclass(frozen=True)
@@ -241,15 +305,28 @@ async def chat_stream(websocket: WebSocket, session_id: int) -> None:
 
             messages = prompting.build_chat_messages(question.content, chunks, turns)
 
-            # Generation (T3.5) replaces this. Only the shape is reported: the
-            # assembled prompt is not echoed to the client.
-            await websocket.send_json(
-                {
-                    "type": "prompt_ready",
-                    "message_count": len(messages),
-                    "context_chunks": len(chunks),
-                    "history_turns": len(messages) - 2,
-                }
-            )
+            # Lets the client swap its typing indicator for an empty assistant
+            # bubble before the first token lands.
+            await websocket.send_json({"type": "start"})
+
+            answer, error = await _stream_answer(websocket, messages)
+
+            if error is not None:
+                await websocket.send_json({"type": "error", "detail": error})
+
+            if error is None or answer:
+                # `done` repeats the whole answer so the client can reconcile
+                # rather than trusting its own concatenation of the tokens. A
+                # partial answer is still sent, marked as incomplete, so the
+                # user keeps what did arrive instead of watching it vanish.
+                await websocket.send_json(
+                    {
+                        "type": "done",
+                        "content": answer,
+                        "partial": error is not None,
+                    }
+                )
+
+            # Persistence of the exchange lands in T3.6.
     except WebSocketDisconnect:
         return

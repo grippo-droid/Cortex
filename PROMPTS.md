@@ -407,3 +407,70 @@ tests pass, 15 of them new.
 - The same T3.2 test broke again, for the same legitimate reason: with no
   documents, the socket now answers rather than erroring.
 
+### T3.5 — Generation and token streaming
+
+**Prompt:** Build T3.5. Alongside the single live Groq check, also run a live
+check with two concurrent streaming connections and confirm neither stalls
+waiting on the other, since that is exactly the kind of bug that passes
+single-user tests.
+
+**Outcome:** Answers now stream from Groq token by token. 206 tests pass, 18 of
+them new, plus three live checks including the concurrency one.
+
+**Notable decisions made during the build:**
+- The provider's stream is a synchronous generator. Iterating it in the socket
+  coroutine would block the event loop between every token, and
+  `run_in_threadpool` does not help because it awaits a single call rather than
+  something yielding repeatedly over seconds. The generator runs on a worker
+  thread and passes fragments through an `asyncio.Queue` that the coroutine
+  drains.
+- Retries happen only before the first token. Once output has been delivered,
+  retrying would repeat text the user has already read, so a mid-stream failure
+  is final. The SDK's own retries are disabled to keep that rule in one place.
+- A failure after tokens have arrived still sends `done` with the partial text
+  and `partial: true`, so the user keeps what arrived. A failure before any
+  token sends only an error, since claiming an empty answer would be a lie.
+- `done` repeats the whole answer so the client can reconcile rather than trust
+  its own concatenation.
+- Groq is reached through the OpenAI client with a different base URL, since its
+  API is compatible. That avoided a new dependency, and the two providers are
+  still separate classes so their models and error handling can diverge.
+- Provider errors are translated into messages that say what to do: a rejected
+  key, a rate limit, an over-long prompt, and an upstream outage read
+  differently, and only the last two are marked worth retrying.
+- The concurrency check initially reported a false failure. The implementation
+  was correct; the assertion was calibrated for slower streams and demanded a
+  200ms overlap, which Groq never produced because each answer finished in about
+  150ms of token flow. Rewritten around two signals that do not depend on
+  provider speed: interleaving count and wall clock against summed duration.
+  With longer answers the result was unambiguous — 392 switches between the two
+  connections, 1949ms wall clock against 3764ms summed.
+- A test helper hung the suite: its loop waited for a `done` frame that never
+  arrives when generation fails before the first token. Fixed to stop on a bare
+  error.
+
+---
+
+## Notes for the walkthrough video (T6.3)
+
+**Show the combined isolation and anti-hallucination moment.** Two users, one
+question. Alice uploads a memo containing "The alpha project launch code is
+HELIOTROPE-9". Bob, signed in separately, asks *"What is the alpha project
+launch code?"* and the live answer is:
+
+> The context does not contain the answer to the question about the alpha
+> project launch code. [1] only discusses tomato growing notes and does not
+> mention any project launch code.
+
+This is worth showing because it demonstrates two graded properties in a single
+live exchange: retrieval never reached Alice's collection, and the model
+declined rather than inventing an answer. Alice asking the same question in her
+own session returns the code with a citation, which makes the contrast obvious
+on screen.
+
+Supporting evidence available to mention while showing it:
+- Bob can send Alice's `user_id` and her exact collection name in the question
+  frame and still gets only his own documents.
+- Bob opening a WebSocket against Alice's session id is refused with the same
+  close code and reason as a session that does not exist.
+
