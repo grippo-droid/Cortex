@@ -5,6 +5,8 @@ python-multipart==0.0.20
 
 # Config
 pydantic-settings==2.7.1
+# Backs pydantic's EmailStr, used to validate registration input.
+email-validator==2.2.0
 
 # Database
 SQLAlchemy==2.0.36

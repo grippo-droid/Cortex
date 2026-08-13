@@ -1,1 +1,13 @@
-"""Password hashing and JWT helpers. Implemented in Phase 1 (T1.1-T1.3)."""
+"""Password hashing helpers. JWT creation and decoding land in T1.2/T1.3."""
+
+from passlib.context import CryptContext
+
+_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def hash_password(password: str) -> str:
+    return _pwd_context.hash(password)
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return _pwd_context.verify(plain_password, hashed_password)

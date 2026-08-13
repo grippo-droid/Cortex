@@ -43,3 +43,37 @@ the specs into `docs/`, and built all four Phase 0 tickets.
 - Indexes and cascades from Architecture section 7.2 built into the models up
   front rather than retrofitted at T4.5.1 — free now, a migration later.
 - `OPENAI_API_KEY` typed as optional so Phase 0/1 boot without a key.
+
+---
+
+## Phase 1 — Auth
+
+### T1.1 — `POST /auth/register`
+
+**Prompt:** Build T1.1: `POST /auth/register` with bcrypt hashing and
+duplicate-email handling. Register returns `201 + UserRead` (no token); login
+and JWT issuance follow in T1.2, which will also wire a token into the register
+response per PRD user story 1. Use pytest with a real test file rather than a
+throwaway script, so the pattern can be reused for the graded Phase 4 isolation
+tests.
+
+**Outcome:** Added the schema, hashing helpers, an `auth_service` holding the
+logic, and a thin route. 13 pytest cases covering the success path, duplicate
+handling, validation, and storage.
+
+**Notable decisions made during the build:**
+- Emails are lowercased and stripped before storage and before the duplicate
+  check. Without it `A@x.com` and `a@x.com` become separate tenants, which would
+  silently split one person's documents across two Chroma collections.
+- Duplicate registration is guarded twice: a `SELECT` pre-check for the clean
+  409, and an `IntegrityError` handler behind it, because two concurrent
+  requests can both pass the pre-check. The `UNIQUE` constraint is the real
+  guarantee.
+- Password length is validated in **bytes**, not characters. bcrypt ignores
+  everything past 72 bytes, so a 40-character multibyte password would otherwise
+  be accepted while only partly verified.
+- Test dependencies live in `requirements-dev.txt` so the Docker image does not
+  ship pytest.
+- `tests/conftest.py` sets `DATABASE_URL` before importing `app.config`, since
+  Settings is instantiated and cached at import time. This keeps the suite off
+  the developer's real `cortex.db`.
