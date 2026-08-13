@@ -39,3 +39,10 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+def init_db() -> None:
+    """Create any missing tables. Adequate for a prototype; Alembic if this grows."""
+    from app import models  # noqa: F401  imported so models register on Base.metadata
+
+    Base.metadata.create_all(bind=engine)
