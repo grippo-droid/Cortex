@@ -166,3 +166,49 @@ against the running stack.
 - The first browser run reported a false failure: `[role="alert"]` also matches
   Next's injected route announcer, which reads out the page heading. Scoping the
   selector to `form p[role="alert"]` fixed the harness; the app was correct.
+
+---
+
+## Phase 2 — Ingestion
+
+### T2.1-T2.5 — the backend ingestion pipeline (batched)
+
+**Prompt:** Move faster from here without cutting rigour: stop asking about
+implementation-level decisions unless they are genuine security or isolation
+trade-offs, batch tickets that group naturally, and show one summary per batch.
+Build T2.1 through T2.5 — upload, PDF extraction, chunking, embedding into a
+per-user vector collection, and the scoped listing endpoints.
+
+**Outcome:** Built the full backend ingestion path. 106 tests pass, up from 47.
+
+**Notable decisions made during the build:**
+- One endpoint accepts either a file or raw text as multipart form fields, with
+  exactly one required. Two endpoints would have duplicated the size, type, and
+  ownership checks.
+- The upload is read in 64KB blocks and aborts the moment the running total
+  passes the limit. Reading it all and then checking the length would already
+  have buffered a multi-gigabyte upload into memory.
+- The file type allow-list keys off the filename suffix, not the declared
+  content type, which a client can set to anything. A test uploads `payload.exe`
+  labelled `text/plain` and expects a 415.
+- Filenames are stripped of directory components (both separators, since a
+  Windows client sends backslashes) and bounded to 255 characters. The value
+  reaches the database, the vector metadata, and eventually the browser.
+- Chunk size is measured in characters rather than tokens to avoid a tokeniser
+  dependency; 2000 characters is roughly 500 tokens.
+- `chunk_overlap >= chunk_size` raises rather than looping forever, and the
+  chunk loop has an explicit forward-progress floor.
+- Vector isolation is by collection per user, named `cortex_user_{id}` from the
+  id on the verified token. `collection_name_for_user` rejects anything that is
+  not an `int`, since a string there would let a caller address any collection.
+- Deleting a document removes its vectors before its row: an orphaned row is
+  recoverable, orphaned vectors that still answer queries are not.
+- Reading or deleting another user's document returns a 404 identical to that
+  of a document that does not exist, so ids cannot be probed.
+- Embedding sits behind an `EmbeddingProvider` protocol. Tests swap in a
+  deterministic hash-based fake, so the suite never calls a paid API.
+- Tests initially shared one Chroma directory and leaked between each other:
+  Chroma holds SQLite handles open, so deleting the directory silently fails on
+  Windows, and one test read another's collection. Each test now gets its own
+  directory. This mattered — a real isolation failure could have passed.
+
