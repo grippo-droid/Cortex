@@ -212,3 +212,33 @@ per-user vector collection, and the scoped listing endpoints.
   Windows, and one test read another's collection. Each test now gets its own
   directory. This mattered — a real isolation failure could have passed.
 
+### Local embedding provider
+
+**Prompt:** Switch to Groq for development to avoid OpenAI costs, implemented as
+a new `EmbeddingProvider` driven by an environment variable so switching back is
+configuration rather than code. Note in the README and architecture doc which
+provider was used during development, and that switching requires re-uploading
+documents because vector dimensions differ.
+
+**Outcome:** Groq turned out to have no embeddings endpoint, so after checking
+their documentation the local ONNX MiniLM model bundled with chromadb was used
+instead. 113 tests pass.
+
+**Notable decisions made during the build:**
+- Groq publishes only chat, speech, and agentic models, and its
+  OpenAI-compatibility page never mentions `/embeddings`. A
+  `GroqEmbeddingProvider` was therefore impossible; Groq remains the intended
+  chat provider for Phase 3.
+- `all-MiniLM-L6-v2` runs through the ONNX runtime chromadb already depends on,
+  so the local provider added no new dependency. Weights are about 80MB,
+  downloaded once and cached, offline thereafter.
+- `EMBEDDING_PROVIDER` defaults to `openai` in `.env.example`, matching the
+  option the assignment names, while the local `.env` uses `local`.
+- Chroma's `InvalidDimensionException` is caught and rewritten into a message
+  naming the active provider and instructing a re-upload. Without it, switching
+  provider produces an opaque dimensionality error at insert time.
+- A chromadb build issue logs a telemetry error on every operation: it calls
+  posthog's `capture()` with an outdated signature. The send always fails, so no
+  data leaves the machine, but it drowns real output; that one logger is
+  silenced.
+

@@ -29,7 +29,8 @@
 - `POST /documents` — accepts file upload or raw text.
 - Text extraction: `pypdf`/`pdfplumber` for PDFs, plain read for .txt/.md.
 - Chunking: recursive character/token splitter (~500-800 tokens, ~50-100 overlap).
-- Embedding: OpenAI `text-embedding-3-small` (or provider equivalent).
+- Embedding: OpenAI `text-embedding-3-small` (or provider equivalent), selected
+  by `EMBEDDING_PROVIDER` behind an `EmbeddingProvider` interface. See §5.1.
 - Storage: Chroma collection **namespaced per user** (e.g., collection name = `user_{id}`,
   or a single collection with a mandatory `user_id` metadata filter on every query).
 - `GET /documents` — reads document metadata from relational DB, filtered by `user_id`.
@@ -62,6 +63,27 @@ messages(id, session_id FK, role[user|assistant], content, created_at)
 - Each chunk stored with metadata: `{document_id, chunk_index, filename}`.
 - Query always scoped to the caller's own collection — never accepts a collection name
   from the client.
+
+### 5.1 Embedding provider selection
+Embedding sits behind an `EmbeddingProvider` interface chosen by the
+`EMBEDDING_PROVIDER` environment variable, so swapping provider is configuration
+rather than code:
+
+- `openai` — `text-embedding-3-small`, 1536 dimensions. The configured default
+  and the option the assignment names.
+- `local` — `all-MiniLM-L6-v2` through the ONNX runtime ChromaDB already
+  depends on, 384 dimensions, no API key and no per-call cost. Development and
+  testing during the assessment ran on this to avoid usage charges.
+
+**Vectors are not portable between providers.** The dimensions differ, and
+distances between vectors from different models are meaningless even where the
+dimensions happen to agree. Chroma rejects a mismatched insert or query, which
+the application surfaces as an explicit error naming the active provider.
+Changing `EMBEDDING_PROVIDER` therefore requires deleting and re-uploading every
+document so it is re-embedded.
+
+Groq is not a candidate here despite being suitable for chat generation: it
+exposes no embeddings endpoint.
 
 ## 6. Deployment
 - `docker-compose.yml` services: `api` (FastAPI), optionally `chroma` (if run as a server

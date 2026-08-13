@@ -77,6 +77,40 @@ makes the cascade deletes in `app/models.py` real rather than decorative.
 If you swap SQLite for Postgres, that listener becomes a no-op (it is guarded on
 the driver) and Postgres enforces the constraints natively.
 
+## Embedding providers
+
+The application is provider-agnostic: everything downstream of ingestion depends
+on an `EmbeddingProvider` interface, so changing provider is a config change
+rather than a code change. Set `EMBEDDING_PROVIDER` in `backend/.env`.
+
+| Value | Model | Dimensions | Cost | Key required |
+|---|---|---|---|---|
+| `openai` *(default)* | `text-embedding-3-small` | 1536 | paid | `OPENAI_API_KEY` |
+| `local` | `all-MiniLM-L6-v2` (ONNX) | 384 | free | none |
+
+`openai` is the configured default, matching the primary option named in the
+assignment. Development and testing were carried out against the `local`
+provider for cost reasons during the assessment: it runs entirely on the
+machine through the ONNX runtime that ChromaDB already depends on, so no volume
+of testing incurs any charge. The model weights (about 80MB) download once to
+the user's cache directory on first use and every run afterwards is offline.
+
+### Switching providers requires re-uploading documents
+
+**Embeddings from different providers are not interchangeable.** They have
+different dimensions — 1536 against 384 here — and even at matching dimensions
+the vector spaces are unrelated, so a similarity score between them is
+meaningless. ChromaDB rejects the mismatch rather than silently returning
+nonsense, and the application turns that into an explicit error naming the
+current provider and telling you to re-upload.
+
+So after changing `EMBEDDING_PROVIDER`, delete and re-upload every document.
+Deleting a document removes its vectors, and re-uploading re-embeds it with the
+newly selected provider.
+
+Groq is not offered as an embedding provider: it serves chat completions only
+and has no embeddings endpoint.
+
 ## Known limitations
 
 ### Token storage (localStorage)

@@ -14,16 +14,38 @@ Two rules hold everywhere in this module:
    place to audit.
 """
 
+import logging
 from functools import lru_cache
 from typing import Any
 
 import chromadb
 from chromadb.api.models.Collection import Collection
 from chromadb.config import Settings as ChromaSettings
+from chromadb.errors import InvalidDimensionException
 
 from app.config import settings
 
 _COLLECTION_PREFIX = "cortex_user_"
+
+# This chromadb build calls posthog's capture() with an outdated signature, so
+# every telemetry attempt raises and logs an error. The send always fails, which
+# means nothing leaves the machine, but it buries real log output. Telemetry is
+# disabled at the client too; this just silences the failed attempts.
+logging.getLogger("chromadb.telemetry.product.posthog").setLevel(logging.CRITICAL)
+
+
+class EmbeddingDimensionMismatch(Exception):
+    """Stored vectors were produced by a different embedding provider."""
+
+
+def _mismatch_error(exc: Exception) -> EmbeddingDimensionMismatch:
+    return EmbeddingDimensionMismatch(
+        "This collection was built with a different embedding model "
+        f"(EMBEDDING_PROVIDER is currently '{settings.embedding_provider}'). "
+        "Embeddings from different providers have different dimensions and "
+        "cannot be mixed. Delete the affected documents and upload them again "
+        f"to re-embed them. Original error: {exc}"
+    )
 
 
 def collection_name_for_user(user_id: int) -> str:
@@ -73,19 +95,24 @@ def add_document_chunks(
 
     collection = _collection_for_user(user_id)
 
-    collection.add(
-        ids=[_chunk_id(user_id, document_id, index) for index in range(len(chunks))],
-        embeddings=embeddings,
-        documents=chunks,
-        metadatas=[
-            {
-                "document_id": document_id,
-                "chunk_index": index,
-                "filename": filename,
-            }
-            for index in range(len(chunks))
-        ],
-    )
+    try:
+        collection.add(
+            ids=[
+                _chunk_id(user_id, document_id, index) for index in range(len(chunks))
+            ],
+            embeddings=embeddings,
+            documents=chunks,
+            metadatas=[
+                {
+                    "document_id": document_id,
+                    "chunk_index": index,
+                    "filename": filename,
+                }
+                for index in range(len(chunks))
+            ],
+        )
+    except InvalidDimensionException as exc:
+        raise _mismatch_error(exc) from exc
 
 
 def query_user_chunks(
@@ -97,10 +124,13 @@ def query_user_chunks(
     if collection.count() == 0:
         return []
 
-    result = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=min(limit, collection.count()),
-    )
+    try:
+        result = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=min(limit, collection.count()),
+        )
+    except InvalidDimensionException as exc:
+        raise _mismatch_error(exc) from exc
 
     documents = (result.get("documents") or [[]])[0]
     metadatas = (result.get("metadatas") or [[]])[0]

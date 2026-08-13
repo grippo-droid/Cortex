@@ -1,6 +1,7 @@
 """Application configuration, loaded from environment variables / .env."""
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -26,6 +27,14 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     embedding_model: str = "text-embedding-3-small"
     chat_model: str = "gpt-4o-mini"
+
+    # Which backend produces embeddings.
+    #   openai - text-embedding-3-small, 1536 dimensions, needs credit
+    #   local  - all-MiniLM-L6-v2 via the ONNX runtime chromadb already ships,
+    #            384 dimensions, no key, no cost
+    # Vectors are not interchangeable between the two: switching means
+    # re-uploading every document. See the README.
+    embedding_provider: Literal["openai", "local"] = "openai"
 
     # Storage
     database_url: str = "sqlite:///./cortex.db"
