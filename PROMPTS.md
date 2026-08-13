@@ -242,3 +242,34 @@ instead. 113 tests pass.
   data leaves the machine, but it drowns real output; that one logger is
   silenced.
 
+### T2.6 — Frontend document dashboard
+
+**Prompt:** Build T2.6 with native drag-and-drop, optimistic delete with
+rollback, and sequential multi-file uploads. Summary and test results are
+enough, since no new `user_id` scoping is introduced.
+
+**Outcome:** Built the dashboard and, in the process, found and fixed a real
+authentication bug. 11 of 11 browser scenarios pass, backend still at 113.
+
+**Notable decisions made during the build:**
+- **Bug found by the browser pass:** refreshing `/documents` signed the user
+  out. React runs child effects before parent effects, so the page mounted in
+  the same commit that set `user` fired its fetch before `AuthProvider`
+  re-registered the token getter. The request went out unauthenticated, and the
+  401 handler cleared the session. The API client now reads the token through a
+  ref written wherever the token changes, so there is no ordering dependency.
+  T1.4 missed this because those pages made no API calls.
+- `apiFetch` passes `FormData` through without serialising it and, critically,
+  without setting `Content-Type`. Only the browser knows the multipart boundary
+  it generated, so setting that header by hand produces an unparseable body.
+- Status badges cover all four backend states even though synchronous ingestion
+  only ever returns `ready` or `failed`. When T5.2 moves ingestion to a
+  background task, `pending` and `processing` start appearing with no frontend
+  change.
+- Multi-file uploads run sequentially so a failure names its own file rather
+  than being lost among concurrent errors.
+- Two harness bugs cost time and are worth remembering: `networkidle` fires
+  before React hydrates, so assertions on it read an empty shell, and
+  `textContent` on the body includes inline `<script>` bodies where `innerText`
+  does not.
+

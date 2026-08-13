@@ -18,6 +18,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -62,17 +63,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // The API client reads the token through this ref rather than through state.
+  //
+  // React runs child effects before parent effects, so a protected page mounted
+  // in the same commit that sets `user` fires its data fetch before this
+  // provider's effects run again. Closing over the `token` state value there
+  // would hand the client a stale null, the request would go out unauthenticated,
+  // and the resulting 401 would sign the user out on every page refresh. The ref
+  // is updated wherever the token changes, so it is never behind. It is only
+  // ever written from callbacks, never during render.
+  const tokenRef = useRef<string | null>(null);
+
   const clearSession = useCallback(() => {
     writeStoredToken(null);
+    tokenRef.current = null;
     setToken(null);
     setUser(null);
   }, []);
 
-  // Re-registered whenever the token changes, so the API client always sends
-  // the current one without any component threading it through by hand.
+  // Registered once: the getter reads the ref, so it never needs re-binding.
   useEffect(() => {
     configureApiAuth({
-      getToken: () => token,
+      getToken: () => tokenRef.current,
       onUnauthorized: () => {
         clearSession();
         router.replace("/login");
@@ -80,7 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => configureApiAuth(null);
-  }, [token, clearSession, router]);
+  }, [clearSession, router]);
 
   // Restore a session from the stored token. /auth/me is what decides whether
   // that token is still good, so an expired one is cleared here rather than
@@ -97,6 +109,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         return;
       }
+
+      // Publish before validating, so anything that mounts mid-restore already
+      // has a token to send. An invalid one is cleared below.
+      tokenRef.current = stored;
 
       try {
         const restored = await apiFetch<UserRead>("/auth/me", {
@@ -136,6 +152,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       writeStoredToken(result.access_token);
+      tokenRef.current = result.access_token;
       setToken(result.access_token);
       setUser(result.user);
     },

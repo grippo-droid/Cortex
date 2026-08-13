@@ -74,14 +74,26 @@ export async function apiFetch<T>(
 ): Promise<T> {
   const bearer = token !== undefined ? token : (apiAuth?.getToken() ?? null);
 
+  // Multipart uploads must set their own Content-Type, because only the
+  // browser knows the boundary token it generated. Supplying the header by
+  // hand produces a body the server cannot parse.
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...(body !== undefined && !isFormData
+        ? { "Content-Type": "application/json" }
+        : {}),
       ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
       ...headers,
     },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body:
+      body === undefined
+        ? undefined
+        : isFormData
+          ? (body as FormData)
+          : JSON.stringify(body),
   });
 
   if (!response.ok) {

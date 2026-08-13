@@ -22,6 +22,29 @@ export function validateEmail(email: string): string | null {
   return null;
 }
 
+/** Mirrors ALLOWED_EXTENSIONS in the backend's text_extraction service. */
+export const ALLOWED_EXTENSIONS = [".txt", ".md", ".pdf"] as const;
+
+/** Mirrors MAX_UPLOAD_MB. The server stays the authority; this saves a round trip. */
+export const MAX_UPLOAD_MB = 10;
+export const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
+
+export function validateUploadFile(file: File): string | null {
+  const name = file.name.toLowerCase();
+
+  if (!ALLOWED_EXTENSIONS.some((extension) => name.endsWith(extension))) {
+    return `"${file.name}" is not a supported file type. Allowed: ${ALLOWED_EXTENSIONS.join(", ")}.`;
+  }
+  if (file.size === 0) {
+    return `"${file.name}" is empty.`;
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return `"${file.name}" is larger than the ${MAX_UPLOAD_MB}MB limit.`;
+  }
+
+  return null;
+}
+
 export function validatePassword(password: string): string | null {
   if (!password) {
     return "Password is required.";
