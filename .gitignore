@@ -1,0 +1,30 @@
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Data stores (local, regenerable)
+*.db
+*.sqlite3
+chroma_data/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+next-env.d.ts
+.eslintcache
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
