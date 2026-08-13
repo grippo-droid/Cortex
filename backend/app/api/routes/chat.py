@@ -1,5 +1,7 @@
 """Chat routes: session management over HTTP, and the streaming socket."""
 
+from dataclasses import dataclass
+
 from fastapi import (
     APIRouter,
     Depends,
@@ -21,7 +23,7 @@ from app.schemas.chat import (
     ChatSessionRead,
     MessageRead,
 )
-from app.services import chat_service, retrieval
+from app.services import chat_service, document_service, prompting, retrieval
 from app.services.embeddings import EmbeddingError
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -31,6 +33,18 @@ SESSION_NOT_FOUND_DETAIL = "Chat session not found."
 # One reason for every refusal. A caller must not be able to tell a bad token
 # from a session that is not theirs from a session that does not exist.
 WS_REJECT_REASON = "Unauthorised."
+
+
+@dataclass(frozen=True)
+class _HistoryTurn:
+    """A detached copy of a stored message.
+
+    Copied out while the database session is open so prompt assembly never
+    touches an expired ORM instance after the session has closed.
+    """
+
+    role: str
+    content: str
 
 
 def _not_found() -> HTTPException:
@@ -199,11 +213,42 @@ async def chat_stream(websocket: WebSocket, session_id: int) -> None:
                 }
             )
 
-            # Augmentation (T3.4) and generation (T3.5) replace this.
+            if not chunks:
+                # Nothing retrieved: answer directly rather than paying for a
+                # model call to be told what we already know.
+                with SessionLocal() as db:
+                    has_documents = (
+                        document_service.count_documents(db, authorised_user_id) > 0
+                    )
+
+                await websocket.send_json(
+                    {
+                        "type": "answer",
+                        "content": prompting.no_context_reply(has_documents),
+                        "done": True,
+                    }
+                )
+                continue
+
+            with SessionLocal() as db:
+                history = chat_service.list_messages(
+                    db, user_id=authorised_user_id, session_id=authorised_session_id
+                )
+                turns = [
+                    _HistoryTurn(role=message.role, content=message.content)
+                    for message in history
+                ]
+
+            messages = prompting.build_chat_messages(question.content, chunks, turns)
+
+            # Generation (T3.5) replaces this. Only the shape is reported: the
+            # assembled prompt is not echoed to the client.
             await websocket.send_json(
                 {
-                    "type": "error",
-                    "detail": "Answer generation is not implemented yet.",
+                    "type": "prompt_ready",
+                    "message_count": len(messages),
+                    "context_chunks": len(chunks),
+                    "history_turns": len(messages) - 2,
                 }
             )
     except WebSocketDisconnect:

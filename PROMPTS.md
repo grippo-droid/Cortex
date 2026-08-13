@@ -369,3 +369,41 @@ now and running the blocking calls in a threadpool.
   her own memo at distance 0.2596, while Bob asking the identical question got
   only his gardening notes.
 
+### T3.4 — Augmentation and prompt assembly
+
+**Prompt:** Build T3.4 as planned: system prompt, numbered context blocks,
+bounded history, a zero-context short circuit that avoids a wasted API call, and
+injection mitigation framed honestly.
+
+**Outcome:** Prompt assembly is in place and observable over the socket. 188
+tests pass, 15 of them new.
+
+**Notable decisions made during the build:**
+- Retrieval finding nothing is answered directly instead of asking a model to
+  say it does not know. The wording differs between having no documents at all,
+  which is an onboarding problem, and having documents that do not cover the
+  question, which is a real answer. This path also works with no API key.
+- Context sits in the final user message rather than the system prompt, so it
+  stays adjacent to the question however long the history grows, and the system
+  prompt stays byte-identical across turns.
+- Excerpts are numbered, attributed to filename and chunk index, and wrapped in
+  explicit fences. The system prompt states that fenced content is data and
+  never instructions, which is the mitigation for a document containing
+  something like "ignore previous instructions". Worth being precise about the
+  scope: the injected text is the user's own document, so the worst case is a
+  user influencing answers over their own data. It cannot reach another tenant,
+  because retrieval is already scoped by user id.
+- History roles are normalised to user or assistant before they reach the
+  provider, so a stored role cannot smuggle a system turn into the prompt.
+- Trimming drops the oldest turns first and can never drop the system prompt or
+  the current question; a test sets both budgets to zero and asserts exactly
+  those two messages survive.
+- At least part of the first excerpt is always included even when the budget is
+  tiny, since a prompt with no context would make the model refuse for the wrong
+  reason.
+- The socket reports only the shape of the assembled prompt, not its contents.
+  Echoing the full prompt would be a convenient debug affordance and an
+  unnecessary disclosure of the system prompt.
+- The same T3.2 test broke again, for the same legitimate reason: with no
+  documents, the socket now answers rather than erroring.
+

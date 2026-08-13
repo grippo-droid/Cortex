@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     # How many chunks to retrieve per question.
     retrieval_top_k: int = 5
 
+    # Prompt budgets. Characters rather than tokens, for the same reason as
+    # chunking: roughly four characters per token.
+    max_history_messages: int = 10
+    max_history_chars: int = 4000
+    max_context_chars: int = 8000
+
     cors_origins: str = "http://localhost:3000"
 
     @property

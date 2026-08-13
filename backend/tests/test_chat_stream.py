@@ -78,10 +78,11 @@ def test_connection_stays_open_after_the_handshake(client):
         sources = socket.receive_json()
         reply = socket.receive_json()
 
-    # Retrieval answers first (T3.3). Generation lands in T3.5; until then the
-    # socket says so explicitly rather than dropping the question.
-    assert sources["type"] == "sources"
-    assert reply["type"] == "error"
+    # Retrieval answers first (T3.3). This user has uploaded nothing, so the
+    # second frame is the direct answer for an empty search (T3.4) rather than
+    # an assembled prompt.
+    assert sources == {"type": "sources", "chunks": []}
+    assert reply["type"] == "answer"
 
 
 # --------------------------------------------------------------------------

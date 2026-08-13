@@ -35,6 +35,13 @@ def list_documents(db: Session, user_id: int) -> list[Document]:
     )
 
 
+def count_documents(db: Session, user_id: int) -> int:
+    """How many documents this user has, used to word an empty search result."""
+    return len(
+        db.scalars(select(Document.id).where(Document.user_id == user_id)).all()
+    )
+
+
 def get_document(db: Session, user_id: int, document_id: int) -> Document:
     """Fetch one document, scoped to its owner.
 
