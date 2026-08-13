@@ -8,13 +8,21 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
+from fastapi.concurrency import run_in_threadpool
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.api.deps import authenticate_websocket, get_current_user
 from app.database import SessionLocal, get_db
 from app.models import User
-from app.schemas.chat import ChatSessionCreate, ChatSessionRead, MessageRead
-from app.services import chat_service
+from app.schemas.chat import (
+    ChatQuestion,
+    ChatSessionCreate,
+    ChatSessionRead,
+    MessageRead,
+)
+from app.services import chat_service, retrieval
+from app.services.embeddings import EmbeddingError
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -142,12 +150,56 @@ async def chat_stream(websocket: WebSocket, session_id: int) -> None:
 
     try:
         while True:
-            await websocket.receive_text()
+            raw = await websocket.receive_text()
 
-            # Retrieval (T3.3), augmentation (T3.4), and generation (T3.5)
-            # replace this. Answering with an explicit error is better than
-            # silently discarding the question. `authorised_user_id` is what
-            # scopes retrieval to this caller's own collection.
+            try:
+                question = ChatQuestion.model_validate_json(raw)
+            except ValidationError:
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "detail": "Expected a message frame with content.",
+                    }
+                )
+                continue
+
+            try:
+                # Embedding and the Chroma query both block. Running them inline
+                # would stall the event loop, freezing every other connected
+                # socket for the duration.
+                #
+                # `authorised_user_id` came from the handshake token. Nothing in
+                # `question` influences which collection is searched, which is
+                # what stops a client smuggling someone else's id in the frame.
+                chunks = await run_in_threadpool(
+                    retrieval.retrieve_context, authorised_user_id, question.content
+                )
+            except EmbeddingError as exc:
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "detail": f"Could not embed the question: {exc}",
+                    }
+                )
+                continue
+
+            await websocket.send_json(
+                {
+                    "type": "sources",
+                    "chunks": [
+                        {
+                            "content": chunk.content,
+                            "filename": chunk.filename,
+                            "document_id": chunk.document_id,
+                            "chunk_index": chunk.chunk_index,
+                            "distance": chunk.distance,
+                        }
+                        for chunk in chunks
+                    ],
+                }
+            )
+
+            # Augmentation (T3.4) and generation (T3.5) replace this.
             await websocket.send_json(
                 {
                     "type": "error",

@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     chunk_size: int = 2000
     chunk_overlap: int = 200
 
+    # How many chunks to retrieve per question.
+    retrieval_top_k: int = 5
+
     cors_origins: str = "http://localhost:3000"
 
     @property

@@ -75,10 +75,12 @@ def test_connection_stays_open_after_the_handshake(client):
         socket.receive_json()
 
         socket.send_text(json.dumps({"type": "message", "content": "hello"}))
+        sources = socket.receive_json()
         reply = socket.receive_json()
 
-    # Generation lands in T3.5; until then the socket answers explicitly rather
-    # than dropping the question.
+    # Retrieval answers first (T3.3). Generation lands in T3.5; until then the
+    # socket says so explicitly rather than dropping the question.
+    assert sources["type"] == "sources"
     assert reply["type"] == "error"
 
 

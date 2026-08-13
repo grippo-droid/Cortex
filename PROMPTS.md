@@ -336,3 +336,36 @@ tests pass, 17 of them new, plus four live checks against a real uvicorn server.
   timeout down to 0.3s to keep the suite fast, so the live run is what confirms
   the real five-second value.
 
+### T3.3 — Retrieval scoped to the caller's collection
+
+**Prompt:** Build T3.3 as planned. Approved leaving out a distance threshold for
+now and running the blocking calls in a threadpool.
+
+**Outcome:** The socket now retrieves context from the caller's own collection.
+173 tests pass, 18 of them new, plus three live checks with real MiniLM vectors.
+
+**Notable decisions made during the build:**
+- `retrieve_context` takes `user_id` as its first required argument, and the
+  socket passes the value captured from the handshake token. Nothing from the
+  inbound frame reaches it.
+- The question frame is parsed by a pydantic model with `extra="ignore"`, so a
+  smuggled `user_id` or `collection` is structurally discarded rather than
+  merely unused by convention. Tested both in the suite and live.
+- Embedding and the Chroma query are dispatched with `run_in_threadpool`. Both
+  block, and running them inline in the async handler would stall the event loop
+  and freeze every other connected socket for the duration.
+- No distance threshold. The right cutoff differs between MiniLM at 384
+  dimensions and text-embedding-3-small at 1536, and guessing one would silently
+  drop good context. The distance is returned so it is visible; declining to
+  answer is the system prompt's job in T3.4 and T5.1.
+- An unparseable frame gets an error and the socket stays open. A client mistake
+  is not grounds to drop the connection.
+- A T3.2 test legitimately broke: it asserted a valid message frame produced an
+  error, which was true only while retrieval did not exist. Updated to expect
+  the sources frame first.
+- Live verification mattered here. The suite's fake embedding provider is
+  hash-based, so it proves the plumbing but says nothing about whether semantic
+  search finds the right passage. Against real MiniLM, Alice's question matched
+  her own memo at distance 0.2596, while Bob asking the identical question got
+  only his gardening notes.
+
