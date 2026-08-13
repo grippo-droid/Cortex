@@ -106,3 +106,31 @@ bypass risk if missed.
   registration, and enforcing it at login would confirm which passwords are too
   short to be real. It does keep the 72-byte ceiling, so an over-long password
   is a clean 422 rather than a 500 from bcrypt.
+
+### T1.3 — `get_current_user` dependency
+
+**Prompt:** Build T1.3, the `get_current_user` dependency plus a protected
+route. Use `HTTPBearer(auto_error=False)` and return a uniform 401 for both
+missing and invalid credentials, rather than FastAPI's default 403-then-401
+split, matching the single-generic-failure pattern used for login.
+
+**Outcome:** Added `decode_access_token`, the dependency, and `GET /auth/me` as
+the protected route. 47 tests pass, 18 of them new.
+
+**Notable decisions made during the build:**
+- `decode_access_token` passes `algorithms=[settings.jwt_algorithm]` as a strict
+  allow-list rather than honouring the token header's own `alg`. Verified
+  directly: an `alg: none` token and an HS512-signed token are both rejected
+  with "The specified alg value is not allowed", and a wrong-secret token with
+  "Signature verification failed". Trusting the header is a total auth bypass
+  that reads as ordinary code.
+- A valid signature whose `sub` names a deleted account is rejected. The row is
+  gone along with its documents and chats, so the token must stop working at
+  once rather than resolving to nothing further down.
+- Every rejection returns the same body, asserted by a test across three
+  different causes. Divergent messages would let a caller tell a forged token
+  from an expired one.
+- The dependency returns the `User` object rather than a bare id, so routes
+  needing the email do not pay for a second query. It is still one SELECT.
+- `GET /auth/me` was chosen over a throwaway protected route: same effort, and
+  the frontend needs it in T1.4 anyway.

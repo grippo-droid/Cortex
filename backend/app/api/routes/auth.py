@@ -1,8 +1,9 @@
-"""Auth routes. The `get_current_user` dependency lands in T1.3."""
+"""Auth routes: registration, login, and the caller's own identity."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user
 from app.core.security import create_access_token
 from app.database import get_db
 from app.models import User
@@ -50,3 +51,9 @@ def login(payload: UserLogin, db: Session = Depends(get_db)) -> AuthResponse:
         )
 
     return _auth_response(user)
+
+
+@router.get("/me", response_model=UserRead)
+def read_current_user(current_user: User = Depends(get_current_user)) -> UserRead:
+    """Identity of the caller, derived from their token rather than any input."""
+    return UserRead.model_validate(current_user)

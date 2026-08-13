@@ -1,4 +1,4 @@
-"""Password hashing and JWT creation. Token decoding lands in T1.3."""
+"""Password hashing, JWT creation, and JWT verification."""
 
 from datetime import datetime, timedelta, timezone
 
@@ -42,3 +42,18 @@ def create_access_token(
     }
 
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def decode_access_token(token: str) -> dict:
+    """Verify a JWT and return its claims. Raises `JWTError` if it is not valid.
+
+    `algorithms` is a strict allow-list rather than whatever the token's own
+    header asks for. Trusting that header is the classic JWT bypass: an attacker
+    re-signs with `alg: none` (or a weaker algorithm) and the signature check
+    becomes a formality.
+    """
+    return jwt.decode(
+        token,
+        settings.jwt_secret,
+        algorithms=[settings.jwt_algorithm],
+    )
