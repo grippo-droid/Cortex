@@ -273,3 +273,32 @@ authentication bug. 11 of 11 browser scenarios pass, backend still at 113.
   `textContent` on the body includes inline `<script>` bodies where `innerText`
   does not.
 
+---
+
+## Phase 3 — Chat
+
+### T3.1 — Chat session endpoints
+
+**Prompt:** Build T3.1. Keep it separate from T3.2 rather than batching, since
+WebSocket authentication deserves its own review.
+
+**Outcome:** Added five owner-scoped session endpoints. 138 tests pass, 25 of
+them new.
+
+**Notable decisions made during the build:**
+- The ticket names only `POST`, but list, get, messages, and delete were built
+  alongside it. The sidebar in T3.7 needs the list, and Frontend Spec §6 has the
+  client re-fetching history over REST after a dropped socket, so the messages
+  endpoint is what makes reconnection work rather than an extra.
+- `get_session` is the single ownership gate, mirroring `get_document`. T3.2's
+  WebSocket handler will authorise through this same function instead of writing
+  its own query, so the rule lives in one place.
+- Another user's session and a session that does not exist return byte-identical
+  404s, asserted by a test, so ids cannot be probed.
+- The message history test seeds a recognisable secret into one user's session
+  and asserts it appears nowhere in another user's 404 response body.
+- Deleting a session touches no vectors: chat history lives only in SQLite, so
+  unlike documents there is nothing to clean up in Chroma.
+- An explicitly blank title is a 422 rather than a silent fallback to the
+  default; omitting the field is how you ask for the default.
+
