@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     # Uploads
     max_upload_mb: int = 10
 
+    # Chunking. Sized in characters rather than tokens to avoid a tokeniser
+    # dependency; roughly four characters per token, so 2000 is about 500
+    # tokens, inside the 500-800 the architecture doc suggests.
+    chunk_size: int = 2000
+    chunk_overlap: int = 200
+
     cors_origins: str = "http://localhost:3000"
 
     @property
