@@ -134,3 +134,35 @@ the protected route. 47 tests pass, 18 of them new.
   needing the email do not pay for a second query. It is still one SELECT.
 - `GET /auth/me` was chosen over a throwaway protected route: same effort, and
   the frontend needs it in T1.4 anyway.
+
+### T1.4 — Frontend register and login
+
+**Prompt:** Build T1.4: register and login pages, token storage, and a route
+guard. Store the token in `localStorage` and document that in the README as a
+known limitation. Run the browser pass directly — register, refresh, logout,
+login, wrong password, duplicate email, guard redirect — and show the results.
+No Vitest setup for this ticket.
+
+**Outcome:** Added the auth context, a shared `AuthForm`, a `RequireAuth` guard,
+and automatic token injection in the API client. All nine browser scenarios pass
+against the running stack.
+
+**Notable decisions made during the build:**
+- `localStorage` over an httpOnly cookie: the cookie route needs CSRF handling,
+  `SameSite` work across the two dev origins, and a cookie-aware WebSocket
+  handshake for Phase 3. The README records the exposure and, importantly, the
+  blast radius: a stolen token impersonates one user but cannot widen access,
+  since scoping happens server-side from the decoded `user_id`.
+- The provider holds an `isLoading` flag and the guard renders nothing while it
+  is true. Without it every refresh briefly flashes the login redirect while
+  `/auth/me` is still in flight.
+- Login and register opt out of the global 401 handler. A rejected sign-in is a
+  form error, not an expired session, and letting it trigger the session
+  teardown would clear state and redirect mid-submit.
+- Next 16's React Compiler lint rules rejected the first implementation twice:
+  writing a ref during render, and calling `setState` synchronously inside an
+  effect. Replaced the ref with a token-dependent effect registration, and moved
+  the restore logic into an async function.
+- The first browser run reported a false failure: `[role="alert"]` also matches
+  Next's injected route announcer, which reads out the page heading. Scoping the
+  selector to `form p[role="alert"]` fixed the harness; the app was correct.

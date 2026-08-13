@@ -77,6 +77,39 @@ makes the cascade deletes in `app/models.py` real rather than decorative.
 If you swap SQLite for Postgres, that listener becomes a no-op (it is guarded on
 the driver) and Postgres enforces the constraints natively.
 
+## Known limitations
+
+### Token storage (localStorage)
+
+The frontend stores its JWT in `localStorage` under `cortex.token`. **Any script
+running on the page can read it**, so a cross-site scripting bug would leak an
+active session token.
+
+The security document prefers an httpOnly cookie set by the backend, and permits
+this fallback provided it is disclosed. It is chosen deliberately here: a cookie
+would require CSRF protection, `SameSite`/`Secure` handling across the
+`localhost:3000` to `localhost:8000` origin split, and a cookie-aware WebSocket
+handshake — none of which fits the prototype's time budget. Holding the token in
+memory only would avoid the exposure but would sign the user out on every page
+refresh.
+
+Worth being precise about the blast radius: a stolen token impersonates one
+user. It does not widen access, because every query is scoped server-side to the
+`user_id` decoded from the token. Tenant isolation does not depend on where the
+client keeps it.
+
+For production: move to an httpOnly, `Secure`, `SameSite=Lax` cookie, add CSRF
+tokens on state-changing routes, and shorten the token lifetime with refresh
+rotation.
+
+### Other disclosed limitations
+
+- No rate limiting on the auth endpoints (planned as T4.5.4).
+- No refresh-token rotation; a single 24-hour JWT.
+- No email verification on registration.
+- HTTPS is assumed to terminate in front of the app; local development is
+  plain HTTP.
+
 ## Documentation
 
 - [Product requirements](docs/01_PRD.md)
