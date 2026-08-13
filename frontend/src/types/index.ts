@@ -31,7 +31,9 @@ export interface MessageRead {
   created_at: string;
 }
 
-export interface TokenResponse {
+/** Returned by both POST /auth/register and POST /auth/login. */
+export interface AuthResponse {
   access_token: string;
   token_type: "bearer";
+  user: UserRead;
 }

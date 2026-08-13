@@ -6,12 +6,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import auth, chat, documents
-from app.config import settings
+from app.config import settings, verify_jwt_secret
 from app.database import init_db
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    verify_jwt_secret()
     init_db()
     yield
 

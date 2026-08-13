@@ -4,6 +4,11 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# The value shipped in .env.example. Booting with it would mean signing tokens
+# with a secret that is public in the repository.
+PLACEHOLDER_JWT_SECRET = "change-me-to-a-long-random-string"
+MIN_JWT_SECRET_LENGTH = 32
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -42,3 +47,27 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+
+
+def verify_jwt_secret(current: Settings | None = None) -> None:
+    """Refuse to serve requests with a guessable signing key.
+
+    A JWT is only as trustworthy as its secret: anyone who knows it can forge a
+    token for any `sub`, and since every isolation check downstream trusts the
+    `user_id` decoded from that token, a known secret is a full cross-tenant
+    read of every user's documents and chats. Fail at startup instead.
+    """
+    current = current or settings
+
+    if current.jwt_secret == PLACEHOLDER_JWT_SECRET:
+        raise RuntimeError(
+            "JWT_SECRET is still the placeholder value from .env.example. "
+            "Generate a real one with:\n"
+            '    python -c "import secrets; print(secrets.token_urlsafe(48))"'
+        )
+
+    if len(current.jwt_secret.strip()) < MIN_JWT_SECRET_LENGTH:
+        raise RuntimeError(
+            f"JWT_SECRET must be at least {MIN_JWT_SECRET_LENGTH} characters; "
+            f"got {len(current.jwt_secret.strip())}."
+        )

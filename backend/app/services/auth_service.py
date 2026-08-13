@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.security import hash_password
+from app.core.security import DUMMY_PASSWORD_HASH, hash_password, verify_password
 from app.models import User
 
 
@@ -33,4 +33,24 @@ def register_user(db: Session, email: str, password: str) -> User:
         raise EmailAlreadyRegisteredError(email) from exc
 
     db.refresh(user)
+    return user
+
+
+def authenticate_user(db: Session, email: str, password: str) -> User | None:
+    """Return the user if the credentials are valid, otherwise None.
+
+    Callers must not distinguish "no such account" from "wrong password" in the
+    response — see the single 401 in the login route.
+    """
+    user = get_user_by_email(db, email)
+
+    if user is None:
+        # Burn a comparable amount of CPU so an unregistered address does not
+        # answer measurably faster than a registered one.
+        verify_password(password, DUMMY_PASSWORD_HASH)
+        return None
+
+    if not verify_password(password, user.hashed_password):
+        return None
+
     return user

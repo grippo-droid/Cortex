@@ -1,6 +1,7 @@
 """Request and response schemas for the auth endpoints."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -9,9 +10,16 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 MAX_PASSWORD_BYTES = 72
 
 
-class UserCreate(BaseModel):
+def _reject_overlong_password(value: str) -> str:
+    # Measured in bytes, not characters: non-ASCII passwords hit the bcrypt
+    # ceiling sooner than their length suggests.
+    if len(value.encode("utf-8")) > MAX_PASSWORD_BYTES:
+        raise ValueError(f"Password must be at most {MAX_PASSWORD_BYTES} bytes long.")
+    return value
+
+
+class _EmailPayload(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8)
 
     @field_validator("email")
     @classmethod
@@ -19,16 +27,19 @@ class UserCreate(BaseModel):
         """Fold case so `A@x.com` and `a@x.com` cannot become two tenants."""
         return value.strip().lower()
 
-    @field_validator("password")
-    @classmethod
-    def _reject_overlong_password(cls, value: str) -> str:
-        # Measured in bytes, not characters: non-ASCII passwords hit the bcrypt
-        # ceiling sooner than their length suggests.
-        if len(value.encode("utf-8")) > MAX_PASSWORD_BYTES:
-            raise ValueError(
-                f"Password must be at most {MAX_PASSWORD_BYTES} bytes long."
-            )
-        return value
+
+class UserCreate(_EmailPayload):
+    password: str = Field(min_length=8)
+
+    _check_password = field_validator("password")(_reject_overlong_password)
+
+
+class UserLogin(_EmailPayload):
+    # No minimum here: the policy applies at registration, and rejecting a short
+    # password on login would only confirm it could not belong to an account.
+    password: str
+
+    _check_password = field_validator("password")(_reject_overlong_password)
 
 
 class UserRead(BaseModel):
@@ -39,3 +50,11 @@ class UserRead(BaseModel):
     id: int
     email: str
     created_at: datetime
+
+
+class AuthResponse(BaseModel):
+    """Returned by both register and login, so the client needs one round trip."""
+
+    access_token: str
+    token_type: Literal["bearer"] = "bearer"
+    user: UserRead

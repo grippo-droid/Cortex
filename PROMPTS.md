@@ -77,3 +77,32 @@ handling, validation, and storage.
 - `tests/conftest.py` sets `DATABASE_URL` before importing `app.config`, since
   Settings is instantiated and cached at import time. This keeps the suite off
   the developer's real `cortex.db`.
+
+### T1.2 — `POST /auth/login` and JWT issuance
+
+**Prompt:** Build T1.2. Both register and login return the same `AuthResponse`
+(token plus user) so the client needs one round trip; update the T1.1 tests and
+add `AuthResponse` to `frontend/src/types/index.ts` in the same commit. Add the
+`JWT_SECRET` placeholder check now rather than deferring it to Phase 4.5 —
+refuse to start if the secret is still the default, since it is a real auth
+bypass risk if missed.
+
+**Outcome:** Added `create_access_token`, `authenticate_user`, `POST
+/auth/login`, and a startup guard on `JWT_SECRET`. 29 tests pass.
+
+**Notable decisions made during the build:**
+- Unknown email and wrong password return a byte-identical 401. A test asserts
+  the two responses are equal, because any divergence turns login into a
+  user-enumeration oracle.
+- The "no such user" path still runs one bcrypt verification against a dummy
+  hash. Without it the endpoint leaks the same information through response
+  timing — roughly 1ms versus a few hundred.
+- `sub` is stored as a string, per the JWT spec; T1.3 casts it back to `int`.
+- The `JWT_SECRET` guard refuses startup on the placeholder or on any secret
+  under 32 characters. A known signing key means anyone can forge a token for
+  any `user_id`, and since every isolation check downstream trusts that decoded
+  id, it would be a full cross-tenant read of every user's data.
+- `UserLogin` sets no minimum password length: the policy belongs at
+  registration, and enforcing it at login would confirm which passwords are too
+  short to be real. It does keep the 72-byte ceiling, so an over-long password
+  is a clean 422 rather than a 500 from bcrypt.
