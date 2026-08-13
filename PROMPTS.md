@@ -478,6 +478,49 @@ back into the prompt. 218 tests pass, 12 of them new.
 - The assistant message is written once at the end rather than per token, which
   would have meant an update per token.
 
+### T3.7 — Frontend chat UI
+
+**Prompt:** Build T3.7, the last big ticket, including how the socket hook
+handles the auth frame, reconnection, and streaming render without layout shift.
+Fold T5.5 in and mark it done on the ticket list.
+
+**Outcome:** The chat UI works end to end. 10 of 10 browser scenarios pass, and
+the render batching was measured rather than assumed. A real message-loss bug
+was found and fixed along the way.
+
+**Notable decisions made during the build:**
+- The socket has two ready states and only the second is usable. `onopen` means
+  "send the auth frame", not "the server will accept messages", so anything
+  typed before the server's `ready` frame is queued.
+- **Bug found by the browser pass:** a question asked while the socket was still
+  connecting was silently lost. The queue was cleared on every run of the
+  connect effect, and React Strict Mode runs that twice on mount, so the second
+  run wiped what the first had queued. The queue is now cleared only when moving
+  to a different conversation. It escaped the earlier manual check because that
+  waited three seconds before asking, which put the socket in `ready` first.
+- A 1008 close is terminal. It means the token was rejected or the session is
+  not the caller's, and retrying would loop forever against a decision that will
+  not change. Every other close backs off and retries.
+- On reconnect the transcript is re-fetched over REST rather than trusted
+  locally, so a partial answer stored during the outage shows up with its
+  marker.
+- Tokens accumulate in a ref and flush once per animation frame. Measured on a
+  479-token answer: 187 render flushes, about 2.6 times fewer than one render
+  per token. The flush rate of 99 per second sits under this browser's actual
+  rAF rate of 137 per second, which headless Chrome runs at because it is not
+  vsync locked; on a 60Hz display the cap would be 60 and the reduction closer
+  to fourfold.
+- The streaming bubble keeps one key for its whole life and reserves a line of
+  height when it appears, so the first token does not shift the layout.
+- Autoscroll follows only while the reader is already at the bottom, with a
+  "jump to latest" control otherwise.
+- Three harness bugs cost time and are worth remembering. Replacing
+  `window.WebSocket` with a plain function drops the non-enumerable statics, so
+  `WebSocket.OPEN` becomes undefined and readiness checks silently fail; a Proxy
+  preserves them. Waiting for the composer to re-enable never blocks, because it
+  is already enabled when the question is sent. And a stale dev server from an
+  earlier run kept port 3000, so the first pass was testing old code.
+
 ---
 
 ## Notes for the walkthrough video (T6.3)

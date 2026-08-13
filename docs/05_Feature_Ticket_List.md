@@ -47,7 +47,9 @@ single focused prompt/session.
 - [ ] T5.2 Async ingestion via BackgroundTasks
 - [ ] T5.3 docker-compose full spin-up (app + db + chroma if server mode)
 - [ ] T5.4 Frontend: optimistic send
-- [ ] T5.5 Frontend: WS reconnection with backoff
+- [x] T5.5 Frontend: WS reconnection with backoff — **done in T3.7**. The socket
+      hook's state machine is the reconnection logic, so building it without
+      backoff would have meant rewriting the hook's core later.
 - [ ] T5.6 Frontend: dark/light mode
 
 ## Phase 6 — Submission Prep

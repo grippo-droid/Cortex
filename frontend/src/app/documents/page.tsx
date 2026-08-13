@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { DocumentList, type PendingUpload } from "@/components/DocumentList";
@@ -124,13 +125,18 @@ function DocumentsView() {
           <h1 className="text-2xl font-semibold">Documents</h1>
           <p className="mt-1 text-sm opacity-60">Signed in as {user?.email}</p>
         </div>
-        <button
-          type="button"
-          onClick={logout}
-          className="rounded-md border border-black/15 px-3 py-1.5 text-sm transition-opacity hover:opacity-70 dark:border-white/20"
-        >
-          Sign out
-        </button>
+        <div className="flex items-center gap-3">
+          <Link href="/chat" className="text-sm underline underline-offset-4 opacity-70">
+            Chat
+          </Link>
+          <button
+            type="button"
+            onClick={logout}
+            className="rounded-md border border-black/15 px-3 py-1.5 text-sm transition-opacity hover:opacity-70 dark:border-white/20"
+          >
+            Sign out
+          </button>
+        </div>
       </header>
 
       <DocumentUpload
