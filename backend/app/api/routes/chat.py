@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import authenticate_websocket, get_current_user
 from app.database import SessionLocal, get_db
-from app.models import User
+from app.models import MessageRole, User
 from app.schemas.chat import (
     ChatQuestion,
     ChatSessionCreate,
@@ -277,31 +277,60 @@ async def chat_stream(websocket: WebSocket, session_id: int) -> None:
                 }
             )
 
-            if not chunks:
-                # Nothing retrieved: answer directly rather than paying for a
-                # model call to be told what we already know.
+            try:
                 with SessionLocal() as db:
+                    # Read the prior turns before storing this question, so the
+                    # current one is not both in the history and in the final
+                    # user message.
+                    history = chat_service.list_messages(
+                        db,
+                        user_id=authorised_user_id,
+                        session_id=authorised_session_id,
+                    )
+                    turns = [
+                        _HistoryTurn(role=message.role, content=message.content)
+                        for message in history
+                    ]
+
+                    # Stored before generation: if the provider fails mid-answer
+                    # the question still belongs in the transcript, rather than
+                    # disappearing on the next refresh.
+                    chat_service.add_message(
+                        db,
+                        user_id=authorised_user_id,
+                        session_id=authorised_session_id,
+                        role=MessageRole.USER,
+                        content=question.content,
+                    )
+
                     has_documents = (
                         document_service.count_documents(db, authorised_user_id) > 0
                     )
+            except chat_service.ChatSessionNotFoundError:
+                # Deleted from another tab while this socket was open.
+                await websocket.send_json(
+                    {"type": "error", "detail": "This chat session no longer exists."}
+                )
+                break
+
+            if not chunks:
+                # Nothing retrieved: answer directly rather than paying for a
+                # model call to be told what we already know.
+                reply = prompting.no_context_reply(has_documents)
+
+                with SessionLocal() as db:
+                    chat_service.add_message(
+                        db,
+                        user_id=authorised_user_id,
+                        session_id=authorised_session_id,
+                        role=MessageRole.ASSISTANT,
+                        content=reply,
+                    )
 
                 await websocket.send_json(
-                    {
-                        "type": "answer",
-                        "content": prompting.no_context_reply(has_documents),
-                        "done": True,
-                    }
+                    {"type": "answer", "content": reply, "done": True}
                 )
                 continue
-
-            with SessionLocal() as db:
-                history = chat_service.list_messages(
-                    db, user_id=authorised_user_id, session_id=authorised_session_id
-                )
-                turns = [
-                    _HistoryTurn(role=message.role, content=message.content)
-                    for message in history
-                ]
 
             messages = prompting.build_chat_messages(question.content, chunks, turns)
 
@@ -327,6 +356,25 @@ async def chat_stream(websocket: WebSocket, session_id: int) -> None:
                     }
                 )
 
-            # Persistence of the exchange lands in T3.6.
+            if answer:
+                # Stored once at the end rather than per token. A partial answer
+                # is kept, because the user read it, but marked so the record
+                # does not present it as finished and the next turn's history
+                # does not treat it as a complete reply.
+                stored = (
+                    answer + chat_service.INCOMPLETE_ANSWER_SUFFIX
+                    if error is not None
+                    else answer
+                )
+
+                with SessionLocal() as db:
+                    chat_service.add_message(
+                        db,
+                        user_id=authorised_user_id,
+                        session_id=authorised_session_id,
+                        role=MessageRole.ASSISTANT,
+                        content=stored,
+                    )
+            # Nothing generated: the question stands alone until it is retried.
     except WebSocketDisconnect:
         return

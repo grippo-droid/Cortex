@@ -449,6 +449,35 @@ them new, plus three live checks including the concurrency one.
   arrives when generation fails before the first token. Fixed to stop on a bare
   error.
 
+### T3.6 — Persisting the exchange
+
+**Prompt:** Build T3.6, including a live reconnect-style check.
+
+**Outcome:** Transcripts now survive a disconnect, and conversation history feeds
+back into the prompt. 218 tests pass, 12 of them new.
+
+**Notable decisions made during the build:**
+- The question is stored before generation begins. If the provider fails
+  mid-answer, the question still belongs in the transcript rather than
+  disappearing on the next refresh.
+- Prior turns are read *before* the current question is stored, so the question
+  does not appear both in the history and in the final user message. A test
+  asserts it appears exactly once in the assembled prompt.
+- A partial answer is stored with an explicit marker appended. The user read
+  that text, so dropping it would make the transcript disagree with what was on
+  screen, but an unmarked truncated answer would later be replayed as history as
+  though it were complete.
+- Nothing is stored when generation fails before the first token: the question
+  stands alone rather than sitting under an invented empty reply.
+- The zero-context replies are stored too. They are real assistant turns the
+  user saw, and skipping them would leave a question with no answer beneath it.
+- `add_message` re-checks ownership rather than trusting the handshake. A
+  session can be deleted from another tab while a socket is open, and writing to
+  a row that no longer exists would otherwise surface as a foreign key error;
+  the socket now reports it and closes.
+- The assistant message is written once at the end rather than per token, which
+  would have meant an update per token.
+
 ---
 
 ## Notes for the walkthrough video (T6.3)

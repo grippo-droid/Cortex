@@ -12,6 +12,13 @@ from app.models import ChatSession, Message
 
 DEFAULT_SESSION_TITLE = "New chat"
 
+# Appended to an answer whose stream failed part way through. The user read that
+# text, so the transcript keeps it, but the record should not present a
+# truncated answer as a finished one.
+INCOMPLETE_ANSWER_SUFFIX = (
+    "\n\n_[Answer incomplete: the connection to the model failed.]_"
+)
+
 
 class ChatSessionNotFoundError(Exception):
     """No such session for this user. Also raised when it belongs to someone else."""
@@ -67,6 +74,26 @@ def list_messages(db: Session, user_id: int, session_id: int) -> list[Message]:
             .order_by(Message.created_at, Message.id)
         )
     )
+
+
+def add_message(
+    db: Session, user_id: int, session_id: int, role: str, content: str
+) -> Message:
+    """Append a message to a session the caller owns.
+
+    Ownership is re-checked rather than assumed. The socket authorised once at
+    connect, but a session can be deleted from another tab while a connection is
+    open, and writing to a session row that no longer exists would otherwise
+    fail on the foreign key as an unhandled error.
+    """
+    session = get_session(db, user_id, session_id)
+
+    message = Message(session_id=session.id, role=role, content=content)
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+
+    return message
 
 
 def delete_session(db: Session, user_id: int, session_id: int) -> None:
