@@ -6,7 +6,10 @@ value taken from a path, query string, or request body — see
 docs/03_Security_and_Access.md section 2.
 """
 
-from fastapi import Depends, HTTPException, status
+import asyncio
+import json
+
+from fastapi import Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from sqlalchemy.orm import Session
@@ -62,3 +65,58 @@ def get_current_user(
         raise _unauthorised()
 
     return user
+
+
+# How long an accepted socket may stay silent before it is closed. Without a
+# bound, unauthenticated sockets could be opened and held open indefinitely.
+AUTH_FRAME_TIMEOUT_SECONDS = 5.0
+
+
+async def authenticate_websocket(websocket: WebSocket, db: Session) -> User | None:
+    """Authenticate a WebSocket from its opening frame.
+
+    A browser cannot set headers on a WebSocket handshake, so the token cannot
+    travel in an Authorization header. The alternatives are a query parameter or
+    an opening message; this takes the opening message, because a query string
+    is written to server access logs, proxy logs, and browser history, and a
+    token leaked there is a live session for the rest of its lifetime.
+
+    The socket must be accepted before a frame can be read, so an
+    unauthenticated socket does exist briefly. It is sent nothing and no session
+    data is touched until the caller is known, and the caller closes it on any
+    failure.
+
+    Returns None for every failure mode, so the caller cannot accidentally
+    report them differently and turn this into an oracle.
+    """
+    try:
+        raw = await asyncio.wait_for(
+            websocket.receive_text(), timeout=AUTH_FRAME_TIMEOUT_SECONDS
+        )
+    except (TimeoutError, WebSocketDisconnect):
+        return None
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+
+    if not isinstance(payload, dict) or payload.get("type") != "auth":
+        return None
+
+    token = payload.get("token")
+    if not isinstance(token, str) or not token:
+        return None
+
+    try:
+        claims = decode_access_token(token)
+    except JWTError:
+        return None
+
+    try:
+        user_id = int(claims.get("sub"))
+    except (TypeError, ValueError):
+        return None
+
+    # A valid signature over a deleted account is still not a caller.
+    return db.get(User, user_id)

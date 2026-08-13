@@ -1,10 +1,17 @@
-"""Chat routes. The WebSocket stream lands in T3.2."""
+"""Chat routes: session management over HTTP, and the streaming socket."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
-from app.database import get_db
+from app.api.deps import authenticate_websocket, get_current_user
+from app.database import SessionLocal, get_db
 from app.models import User
 from app.schemas.chat import ChatSessionCreate, ChatSessionRead, MessageRead
 from app.services import chat_service
@@ -12,6 +19,10 @@ from app.services import chat_service
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 SESSION_NOT_FOUND_DETAIL = "Chat session not found."
+
+# One reason for every refusal. A caller must not be able to tell a bad token
+# from a session that is not theirs from a session that does not exist.
+WS_REJECT_REASON = "Unauthorised."
 
 
 def _not_found() -> HTTPException:
@@ -88,3 +99,60 @@ def delete_session(
         )
     except chat_service.ChatSessionNotFoundError:
         raise _not_found() from None
+
+
+@router.websocket("/stream/{session_id}")
+async def chat_stream(websocket: WebSocket, session_id: int) -> None:
+    """Streaming chat socket.
+
+    The client's first frame must be {"type": "auth", "token": "<jwt>"}. Nothing
+    is sent to the socket until that token has been verified and the session
+    confirmed to belong to its bearer.
+    """
+    await websocket.accept()
+
+    # A short-lived session rather than Depends(get_db): that would keep a
+    # database connection checked out for as long as the tab stays open, and
+    # risks serving identity-map data that went stale hours ago.
+    with SessionLocal() as db:
+        user = await authenticate_websocket(websocket, db)
+
+        if user is None:
+            await websocket.close(
+                code=status.WS_1008_POLICY_VIOLATION, reason=WS_REJECT_REASON
+            )
+            return
+
+        try:
+            session = chat_service.get_session(
+                db, user_id=user.id, session_id=session_id
+            )
+        except chat_service.ChatSessionNotFoundError:
+            # Deliberately identical to the failure above.
+            await websocket.close(
+                code=status.WS_1008_POLICY_VIOLATION, reason=WS_REJECT_REASON
+            )
+            return
+
+        # Read while the instances are still attached to the session.
+        authorised_user_id = user.id
+        authorised_session_id = session.id
+
+    await websocket.send_json({"type": "ready", "session_id": authorised_session_id})
+
+    try:
+        while True:
+            await websocket.receive_text()
+
+            # Retrieval (T3.3), augmentation (T3.4), and generation (T3.5)
+            # replace this. Answering with an explicit error is better than
+            # silently discarding the question. `authorised_user_id` is what
+            # scopes retrieval to this caller's own collection.
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "detail": "Answer generation is not implemented yet.",
+                }
+            )
+    except WebSocketDisconnect:
+        return

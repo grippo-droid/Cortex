@@ -302,3 +302,37 @@ them new.
 - An explicitly blank title is a 422 rather than a silent fallback to the
   default; omitting the field is how you ask for the default.
 
+### T3.2 — WebSocket authentication and ownership
+
+**Prompt:** Build T3.2 as planned, and add one check beyond the test list:
+confirm against a live server, not just the test client, that a socket which
+never sends an auth frame is actually closed at the five-second mark rather than
+left hanging.
+
+**Outcome:** Added the streaming socket's handshake and ownership gate. 155
+tests pass, 17 of them new, plus four live checks against a real uvicorn server.
+
+**Notable decisions made during the build:**
+- The token arrives in an opening frame rather than a query parameter. A browser
+  cannot set headers on a WebSocket handshake, so the choice was between the
+  two; a query string is written to access logs, proxy logs, and browser
+  history, and a token leaked there stays valid for its full lifetime.
+- The socket is accepted before the token arrives, because there is no channel
+  to receive it on otherwise. Nothing is sent and no session data is read until
+  the caller is known, and a five-second timeout closes a silent socket so
+  unauthenticated connections cannot be held open indefinitely.
+- `authenticate_websocket` returns `None` for every failure, so the caller
+  cannot accidentally report them differently.
+- Every refusal closes with 1008 and the same reason. A test asserts the close
+  code *and* reason are identical for another user's session and for a session
+  that does not exist.
+- The handler opens a short-lived database session instead of using
+  `Depends(get_db)`, which would hold a connection checked out for as long as
+  the tab stays open and risk serving stale identity-map data.
+- Ownership goes through `chat_service.get_session`, the same function the REST
+  routes use, so the rule has one implementation rather than two.
+- Live verification against uvicorn: a silent socket completed its handshake in
+  4ms and was closed at 5028ms with 1008. The unit test monkeypatches the
+  timeout down to 0.3s to keep the suite fast, so the live run is what confirms
+  the real five-second value.
+
