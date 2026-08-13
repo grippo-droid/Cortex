@@ -1,0 +1,21 @@
+# Phase 0 skeleton: the API plus persistent volumes for SQLite and Chroma.
+# Chroma runs embedded inside the API process (Architecture section 5); a separate
+# chroma service and the frontend container are the T5.3 upgrade.
+
+services:
+  api:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      # Point storage at the mounted volumes rather than the container's workdir.
+      DATABASE_URL: sqlite:////data/cortex.db
+      CHROMA_PERSIST_DIR: /data/chroma
+    volumes:
+      - cortex-data:/data
+    restart: unless-stopped
+
+volumes:
+  cortex-data:
