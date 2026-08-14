@@ -78,7 +78,9 @@ single focused prompt/session.
 
 ## Phase 6 — Submission Prep
 - [x] T6.1 Write README (setup, tech choices, env vars, run instructions, limitations)
-- [ ] T6.2 Compile PROMPTS.md from prompts used throughout
+- [x] T6.2 Compile PROMPTS.md from prompts used throughout — kept running during
+      the build rather than reconstructed at the end, so the reasoning recorded
+      is what was actually believed at the time, corrections included.
 - [ ] T6.3 Record 2-minute walkthrough video
 - [x] T6.4 Final clean-clone test: does the app run from scratch per the README?
       — run against a fresh clone, following the README literally. It found four

@@ -266,6 +266,9 @@ authentication bug. 11 of 11 browser scenarios pass, backend still at 113.
   only ever returns `ready` or `failed`. When T5.2 moves ingestion to a
   background task, `pending` and `processing` start appearing with no frontend
   change.
+  *(Half right, in the event: T5.2 made those states reachable, but the list was
+  fetched once, so a badge would have shown its first value for ever. Polling
+  had to be added for the styling to be worth anything.)*
 - Multi-file uploads run sequentially so a failure names its own file rather
   than being lost among concurrent errors.
 - Two harness bugs cost time and are worth remembering: `networkidle` fires
@@ -572,7 +575,17 @@ configuration a grader runs.
 - A test passed alone and failed in the suite: the WebSocket log line is written
   at teardown, so the assertion was racing. The test was wrong, not flaky.
 
+**T4.5.4 (rate limiting) was deliberately left undone.** The ticket itself marks
+it optional, and adding an untested limiter to the auth endpoints late would
+carry more risk than the credit it earns. It is disclosed in the README's
+limitations rather than quietly skipped.
+
 ## Phase 5 — Bonus
+
+Ordered as the work happened rather than by ticket number, since this is a log.
+T5.5 does not appear separately: the reconnection logic it asks for was built as
+part of T3.7, because the socket hook's state machine *is* that logic and adding
+it afterwards would have meant rewriting the hook.
 
 ### T5.1 — refusal as a code path, measured not guessed
 
@@ -626,6 +639,45 @@ transitions `pending → processing → ready` and that polling stops once nothi
 is unsettled — the state was previously unreachable behind the synchronous
 await, so the badge styling was dead code.
 
+### T5.3 — the full Docker spin-up
+
+**Prompt:** Audit T5.3 first — actually run `docker compose up`, don't just
+trust config validation, since the README currently documents an unverified
+path. Keep Chroma embedded rather than switching to server mode; don't
+re-architect what T4.1 already proved. Then report the real total build time
+rather than estimating it.
+
+**Outcome:** The audit found the API image already built and ran cleanly, so the
+ticket was "extend", not "fix and extend". It also found a real bug: the local
+embedding model downloads about 170MB into the home cache, outside the data
+volume, so **every `docker compose down` threw it away** and the next upload
+stalled for around forty seconds re-downloading it. Measured before and after on
+the same command: previously gone, afterwards 167MB still present.
+
+The frontend is now containerised, so `docker compose up --build` serves the
+whole application with nothing installed on the host. Cold build of both images:
+**410 seconds**; bringing an already-built pair up: **8 seconds**.
+
+**Notable decisions:**
+- `NEXT_PUBLIC_API_URL` is a build argument, not a runtime variable. Next inlines
+  `NEXT_PUBLIC_*` at build time, so setting it in `environment:` would do nothing
+  and the browser would call whatever was compiled in. It happens to work when
+  that value is localhost, which is what makes it worth guarding against rather
+  than discovering on a first deployment.
+- Chroma stays embedded, and `docker-compose.yml` says why: the isolation report
+  describes the embedded, collection-per-user arrangement, and a Chroma server
+  would change the thing that was verified.
+- A `.dockerignore` was written before the first build, not after — a host
+  `node_modules` copied into a Linux image builds fine and then fails at runtime.
+- The API has a healthcheck and the frontend waits on it, so `up` never serves a
+  page whose API is not yet listening.
+
+An early browser run failed and I reported it as the build argument not being
+compiled in. That was wrong: the register form has a `confirmPassword` field the
+script never filled, so validation blocked submission and no request was ever
+made. The check now records whether a request actually left the browser, so that
+failure cannot be misread the same way again.
+
 ## Phase 6 — Submission Prep
 
 ### T6.1 and T6.4 — write the README, then test it
@@ -653,6 +705,31 @@ found four breakages:
 All fixed, then re-run start to finish as one scripted pass with `set -e`: every
 documented step worked, 261 tests passed, the isolation scripts reproduced 18 of
 18, and no generated artifact escaped `.gitignore`.
+
+---
+
+## Where the project ended up
+
+Every ticket through Phase 6 is done except the walkthrough video, plus one
+bonus deliberately declined.
+
+| | |
+|---|---|
+| Backend tests | 265, no live API calls |
+| Isolation checks | 18 of 18, reproducible from committed scripts |
+| Phases 0-4 | complete |
+| Phase 4.5 | T4.5.1-T4.5.3 complete; **T4.5.4 (rate limiting) declined** |
+| Phase 5 | T5.1-T5.5 complete; T5.6 (dark mode) optional and outstanding |
+| Phase 6 | README and clean-clone test done; video outstanding |
+
+Two things are consciously unfinished rather than overlooked, and both are
+disclosed in the README: rate limiting on the auth endpoints, and the relevance
+threshold being measured on MiniLM but not yet on `text-embedding-3-small`,
+because that account had no quota.
+
+Before submission the providers switch back to OpenAI as the documented default,
+which requires re-uploading every document — embeddings from different providers
+have different dimensions and cannot be mixed in one collection.
 
 ---
 
