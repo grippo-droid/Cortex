@@ -561,35 +561,3 @@ Typical uses included:
 The project direction was driven by my understanding of the assessment requirements. I made the decisions about the architecture, technology choices, feature scope, security model, and how the different components should work together. AI-generated suggestions were reviewed, adapted where necessary, and integrated only when they fit the project's requirements.
 
 This document intentionally presents selected examples of AI-assisted development work. It does not represent the project as being generated or operated entirely by an AI coding agent.
-
----
-
-## Notes for the walkthrough video
-
-**Show the combined isolation and anti-hallucination moment.** Two users, one
-question. Alice uploads a memo containing "The alpha project launch code is
-HELIOTROPE-9". Bob, signed in separately, asks *"What is the alpha project
-launch code?"* and the live answer is:
-
-> The context does not contain the answer to the question about the alpha
-> project launch code. [1] only discusses tomato growing notes and does not
-> mention any project launch code.
-
-This is worth showing because it demonstrates two graded properties in a single
-live exchange: retrieval never reached Alice's collection, and the model
-declined rather than inventing an answer. Alice asking the same question in her
-own session returns the code with a citation, which makes the contrast obvious
-on screen.
-
-Supporting evidence available to mention while showing it:
-
-- Bob can send Alice's `user_id` and her exact collection name in the question
-  frame and still gets only his own documents.
-- Bob opening a WebSocket against Alice's session id is refused with the same
-  close code and reason as a session that does not exist.
-
-**Before recording:** if the embedding provider has been switched (for example
-back to OpenAI), delete and re-upload every document first. Embeddings from
-different providers have different dimensions and cannot be mixed in one
-collection, so a demo using documents embedded under the previous provider
-fails on a dimension mismatch.

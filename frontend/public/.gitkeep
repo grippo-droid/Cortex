@@ -1,0 +1,2 @@
+Kept so the directory survives a clone: frontend/Dockerfile copies public/ into
+the runtime image, and git does not track empty directories.
