@@ -1,4 +1,4 @@
-# Isolation Test Report — Cortex (T4.1)
+# Isolation Test Report — Cortex
 
 Multi-tenant isolation is the constraint this project is judged on: **a user must
 never be able to access or query another user's documents or chat history.** This

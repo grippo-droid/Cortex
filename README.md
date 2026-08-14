@@ -257,9 +257,9 @@ The design choices that make this hold:
 
 ### Verifying it
 
-[`docs/06_Isolation_Test_Report.md`](docs/06_Isolation_Test_Report.md) records a
+[`docs/02_Isolation_Test_Report.md`](docs/02_Isolation_Test_Report.md) records a
 live run against a real server: **18 of 18 checks passed.** It covers the five
-checks the security document requires plus thirteen more, including id guessing,
+checks the assessment requires plus thirteen more, including id guessing,
 smuggling another user's id and collection name into the chat frame, a JWT
 forged with the published placeholder secret, an unsigned `alg:none` token,
 cross-user deletes, and a token that outlives its account.
@@ -494,8 +494,9 @@ The frontend stores its JWT in `localStorage` under `cortex.token`. **Any script
 running on the page can read it**, so a cross-site scripting bug would leak an
 active session token.
 
-The security document prefers an httpOnly cookie set by the backend, and permits
-this fallback provided it is disclosed. It is chosen deliberately here: a cookie
+The assessment's security guidance prefers an httpOnly cookie set by the
+backend, and permits this fallback provided it is disclosed. It is chosen
+deliberately here: a cookie
 would require CSRF protection, `SameSite`/`Secure` handling across the
 `localhost:3000` to `localhost:8000` origin split, and a cookie-aware WebSocket
 handshake — none of which fits the prototype's time budget. Holding the token in
@@ -564,9 +565,9 @@ table polled by a worker) so ingestion survives restarts and can be retried.
 
 ## Documentation
 
-- [Technical architecture](docs/02_Technical_Architecture.md) — stack, data
+- [Technical architecture](docs/01_Technical_Architecture.md) — stack, data
   model, and the request and ingestion flows
-- [Isolation test report](docs/06_Isolation_Test_Report.md) — the live
+- [Isolation test report](docs/02_Isolation_Test_Report.md) — the live
   two-user test of the multi-tenant boundary, 18 of 18 checks
 - [Isolation test scripts](docs/isolation/) — reproduce that report against a
   running server

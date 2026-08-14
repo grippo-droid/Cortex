@@ -2,7 +2,7 @@
 #
 # Chroma runs embedded inside the API process (Architecture section 5) rather
 # than as its own service. That is deliberate and not a shortcut: the isolation
-# guarantees verified in docs/06_Isolation_Test_Report.md describe the embedded,
+# guarantees verified in docs/02_Isolation_Test_Report.md describe the embedded,
 # collection-per-user arrangement, and moving to a Chroma server would change
 # the thing that was tested.
 

@@ -3,7 +3,7 @@
 `get_current_user` is the only place a user id enters the application. Every
 user-scoped query downstream must filter on the id it returns, and never on a
 value taken from a path, query string, or request body. That single point of
-entry is what the isolation checks in docs/06_Isolation_Test_Report.md rely on.
+entry is what the isolation checks in docs/02_Isolation_Test_Report.md rely on.
 """
 
 import asyncio
