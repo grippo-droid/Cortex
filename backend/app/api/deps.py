@@ -9,7 +9,14 @@ docs/03_Security_and_Access.md section 2.
 import asyncio
 import json
 
-from fastapi import Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import (
+    Depends,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from sqlalchemy.orm import Session
@@ -17,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.core.security import decode_access_token
 from app.database import get_db
 from app.models import User
+from app.observability import user_id_var
 
 # auto_error=False so a missing Authorization header reaches our own handler.
 # FastAPI's default would answer 403 for a missing header and 401 for a bad
@@ -37,6 +45,7 @@ def _unauthorised() -> HTTPException:
 
 
 def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
     db: Session = Depends(get_db),
 ) -> User:
@@ -64,6 +73,15 @@ def get_current_user(
         # and chats with it. The token has to stop working immediately.
         raise _unauthorised()
 
+    # Recorded for the request log only. Authorisation never reads it back; the
+    # returned `user` remains the single source of identity downstream.
+    #
+    # Written to the request scope rather than only to the ContextVar because
+    # FastAPI runs sync dependencies in a worker thread, which receives a copy
+    # of the context, so a ContextVar set here would be invisible to the
+    # middleware. The scope dict is shared, so it survives the hop.
+    request.state.user_id = user.id
+    user_id_var.set(user.id)
     return user
 
 
@@ -119,4 +137,9 @@ async def authenticate_websocket(websocket: WebSocket, db: Session) -> User | No
         return None
 
     # A valid signature over a deleted account is still not a caller.
-    return db.get(User, user_id)
+    user = db.get(User, user_id)
+    if user is not None:
+        # Logging only, as above.
+        websocket.state.user_id = user.id
+        user_id_var.set(user.id)
+    return user
