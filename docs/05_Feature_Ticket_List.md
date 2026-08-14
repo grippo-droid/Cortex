@@ -34,7 +34,7 @@ single focused prompt/session.
 
 ## Phase 4 — Isolation Testing (do not skip)
 - [x] T4.1 Two-user manual test pass (see Security doc §3) — 18 of 18 checks
-      passed. Report in `07_Isolation_Test_Report.md`; the scripts that produced
+      passed. Report in `06_Isolation_Test_Report.md`; the scripts that produced
       it are in `isolation/`, so the run is reproducible rather than asserted.
 - [x] T4.2 Fix any leaks found — **nothing to fix**, no leak was found. Kept
       checked rather than deleted so the pass is visible in the record.
@@ -66,7 +66,10 @@ single focused prompt/session.
 - [ ] T5.6 Frontend: dark/light mode
 
 ## Phase 6 — Submission Prep
-- [ ] T6.1 Write README (setup, tech choices, env vars, run instructions, limitations)
+- [x] T6.1 Write README (setup, tech choices, env vars, run instructions, limitations)
 - [ ] T6.2 Compile PROMPTS.md from prompts used throughout
 - [ ] T6.3 Record 2-minute walkthrough video
-- [ ] T6.4 Final clean-clone test: does the app run from scratch per the README?
+- [x] T6.4 Final clean-clone test: does the app run from scratch per the README?
+      — run against a fresh clone, following the README literally. It found four
+      breakages, all fixed in the same commit; the corrected instructions were
+      then re-run start to finish as one uninterrupted pass.
