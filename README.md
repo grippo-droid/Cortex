@@ -52,7 +52,7 @@ change rather than a code change. See [Providers](#providers).
 ```
 backend/            FastAPI application
 frontend/           Next.js application
-docs/               Isolation test report
+docs/               Technical architecture, isolation test report
 docs/isolation/     Scripts that produce the isolation test report
 docs/measurements/  Script that sets the retrieval relevance threshold
 ```
@@ -564,6 +564,8 @@ table polled by a worker) so ingestion survives restarts and can be retried.
 
 ## Documentation
 
+- [Technical architecture](docs/02_Technical_Architecture.md) — stack, data
+  model, and the request and ingestion flows
 - [Isolation test report](docs/06_Isolation_Test_Report.md) — the live
   two-user test of the multi-tenant boundary, 18 of 18 checks
 - [Isolation test scripts](docs/isolation/) — reproduce that report against a
