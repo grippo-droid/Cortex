@@ -16,6 +16,8 @@ export interface DocumentRead {
   uploaded_at: string;
   chunk_count: number;
   status: DocumentStatus;
+  /** Why ingestion failed. Only set when `status` is `failed`. */
+  error?: string | null;
 }
 
 export interface ChatSessionRead {

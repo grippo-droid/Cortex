@@ -81,6 +81,16 @@ export function DocumentList({ documents, pending, onDelete }: Props) {
               {formatDate(document.uploaded_at)} &middot; {document.chunk_count}{" "}
               {document.chunk_count === 1 ? "chunk" : "chunks"}
             </p>
+            {document.status === "failed" && document.error && (
+              // Ingestion finishes after the upload response, so this is the
+              // only place the reason can reach the user.
+              <p
+                className="mt-1 text-xs text-red-600 dark:text-red-400"
+                data-testid="document-error"
+              >
+                {document.error}
+              </p>
+            )}
           </div>
 
           <div className="flex shrink-0 items-center gap-3">

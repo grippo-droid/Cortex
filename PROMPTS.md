@@ -523,6 +523,139 @@ was found and fixed along the way.
 
 ---
 
+## Phase 4 — Isolation Testing
+
+### T4.1 — the graded two-user isolation pass
+
+**Prompt:** Before running, confirm there's no leftover Chroma data or stale
+collections from earlier dev/testing sessions that could skew a result either
+direction — start from a genuinely clean state, not just a fresh server process.
+Then run it and show the full report before committing anything.
+
+**Outcome:** The check was worth insisting on: 30 users, 29 documents and 23
+Chroma collections were left over from development. Both stores were archived
+so the run started empty, which is what makes the id-guessing checks meaningful
+— user A was issued id 1, so probing id 1 as user B tests a real foreign record
+rather than colliding with stale data. **18 of 18 checks passed.**
+
+**Follow-up prompt:** Recount precisely — 1/2/3/3b/4/4b/5/5b/6-11 plus three
+deleted-user checks doesn't obviously total 18; make sure the final number is
+exactly and verifiably accurate. Also commit the scripts so the report is
+reproducible.
+
+**Outcome:** The count was right but unverifiable from the document: one heading
+("12-13") silently covered four checks, and check 12 was filed under the wrong
+scenario. Renumbered to a contiguous 1-18, verified mechanically rather than by
+eye, and **re-ran both passes from a clean state** so the committed scripts
+match the evidence exactly. Also fixed a portability bug that would have blocked
+a grader outright — the deleted-user script hardcoded absolute local paths.
+
+## Phase 4.5 — Hardening
+
+### T4.5 — audit before building
+
+**Prompt:** Show me what's actually left versus already covered.
+
+**Outcome:** The audit paid for itself. T4.5.1 was already complete. T4.5.2 was
+half done: the chat path had retry and timeouts from T3.5, but the **embedding
+client had neither**, inheriting the OpenAI SDK's 600-second read timeout with
+two silent retries — up to ~30 minutes holding an upload open. Invisible in
+development because it runs on the local model, but it lands in exactly the
+configuration a grader runs.
+
+**Notable decisions:**
+- Structured logging is a raw ASGI middleware, not `BaseHTTPMiddleware`, which
+  runs the endpoint in a separate task where downstream context is invisible.
+- The user id travels on the request scope rather than a `ContextVar`, because
+  FastAPI runs sync dependencies in a worker thread that gets a *copy* of the
+  context. The first attempt logged `user_id: null` on every request.
+- A test passed alone and failed in the suite: the WebSocket log line is written
+  at teardown, so the assertion was racing. The test was wrong, not flaky.
+
+## Phase 5 — Bonus
+
+### T5.1 — refusal as a code path, measured not guessed
+
+**Prompt:** Measure real distances empirically on both providers before setting
+the default, make it configurable, and err loose (false refusals are worse than
+occasional over-answering). Show me the measured numbers before you commit to a
+default value — I want to see the actual data, not just the final number.
+
+**Outcome:** The anti-hallucination prompt existed since T3.4, but nothing
+enforced it: retrieval returned the top k chunks whatever their distance, so
+refusing depended on the model choosing to obey. Measured three question classes
+against a known corpus on MiniLM — answerable peaked at 0.46,
+related-but-unanswered ran 0.46-0.64, unrelated began at 0.80 — and set the
+threshold at 0.75, in the gap and nearer the unrelated end. Cross-checked
+against the isolation corpus (0.2684 for the owner, 0.9730 for a stranger).
+
+**OpenAI was not measured**: the account had no quota. That is recorded in the
+script rather than guessed at, and the measurement is committed so it can be
+re-run after switching provider.
+
+### T5.4 — optimistic send, and the half that was missing
+
+**Prompt:** Build all four — leaving the queue-drain case out would fix three
+failure paths and leave one silently broken. Show the full hook diff and a real
+browser pass on the retry-while-reconnecting interaction.
+
+**Outcome:** The optimistic append had existed since T3.7, but messages were
+appended as "complete", so a question that never left the browser looked exactly
+like one that had been answered. Now pending until the server acknowledges it,
+failed with a retry control when the socket gives up.
+
+**The browser pass caught a real bug that a shallower test would have missed.**
+Retry from a terminal socket guarded on `shouldReconnectRef`, which only marks
+teardown and is still true after a terminal close — so retry re-queued against a
+socket that was never coming back and sat pending for ever. The failed badge did
+clear, so it looked fixed. Tightening the assertion to require the socket
+actually leave its terminal state exposed it.
+
+### T5.2 — async ingestion
+
+**Prompt:** Build it including the error column. Make sure the frontend polls or
+otherwise observes the PROCESSING state once it's actually reachable, otherwise
+the amber badge work stays dead code. Add a README line noting BackgroundTasks
+runs in-process and isn't a durable queue.
+
+**Outcome:** Ingestion moved to a background task, with validation deliberately
+left synchronous so an unsupported file type still fails loudly at request time.
+An `error` column keeps failure reasons reachable now that the upload response
+can no longer carry them. The browser pass confirmed the badge genuinely
+transitions `pending → processing → ready` and that polling stops once nothing
+is unsettled — the state was previously unreachable behind the synchronous
+await, so the badge styling was dead code.
+
+## Phase 6 — Submission Prep
+
+### T6.1 and T6.4 — write the README, then test it
+
+**Prompt:** Write the README, then actually run the clean-clone test and fix
+what it finds, rather than asserting it works now. Then do a full uninterrupted
+top-to-bottom re-run against the final text — a clean single pass is a stronger
+claim than "each step verified individually".
+
+**Outcome:** Cloning to a fresh directory and following the README literally
+found four breakages:
+
+1. `.venv/Scripts/activate` **exits 0 and does nothing** in bash — it executes
+   the script instead of sourcing it, leaving `pip` pointed at the global
+   interpreter. The README's own MSYS2 warning was defeated by its own
+   instructions.
+2. The Docker steps could not work: copying `.env.example` ships the placeholder
+   `JWT_SECRET`, which the API refuses to start on, so the container would
+   crash-loop.
+3. `pytest` was documented but lives in `requirements-dev.txt`, which the README
+   never mentioned.
+4. A Windows long-path failure that turned out to be the test environment, not
+   the repo — recorded as a tip rather than reported as a defect.
+
+All fixed, then re-run start to finish as one scripted pass with `set -e`: every
+documented step worked, 261 tests passed, the isolation scripts reproduced 18 of
+18, and no generated artifact escaped `.gitignore`.
+
+---
+
 ## Notes for the walkthrough video (T6.3)
 
 **Show the combined isolation and anti-hallucination moment.** Two users, one

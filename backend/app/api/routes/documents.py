@@ -1,6 +1,15 @@
 """Document routes. Ownership always comes from the token, never the request."""
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -9,7 +18,6 @@ from app.database import get_db
 from app.models import User
 from app.schemas.document import DocumentRead
 from app.services import document_service
-from app.services.embeddings import EmbeddingError
 from app.services.text_extraction import (
     ExtractionError,
     UnsupportedFileTypeError,
@@ -52,12 +60,19 @@ async def _read_within_limit(upload: UploadFile, max_bytes: int) -> bytes:
 
 @router.post("", response_model=DocumentRead, status_code=status.HTTP_201_CREATED)
 async def upload_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile | None = File(default=None),
     text: str | None = Form(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DocumentRead:
-    """Accept a file or a block of raw text, and ingest it for the caller."""
+    """Accept a file or a block of raw text, and ingest it for the caller.
+
+    Validation and text extraction happen here, so an unsupported file type or
+    an oversized upload is still refused immediately with a useful status code.
+    Only chunking, embedding, and the vector write are deferred: those are the
+    slow parts, and their failures are recorded on the document instead.
+    """
     has_file = file is not None and bool(file.filename)
     has_text = text is not None and bool(text.strip())
 
@@ -92,19 +107,22 @@ async def upload_document(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from None
 
-    try:
-        document = document_service.ingest_document(
-            db, user_id=current_user.id, filename=filename, text=content
-        )
-    except EmbeddingError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Could not embed the document: {exc}",
-        ) from None
-    except ExtractionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
-        ) from None
+    # The row is committed now and the slow work is deferred, so a large upload
+    # does not hold its request open for the whole embedding round trip. The
+    # caller gets a pending document back and watches it settle.
+    document = document_service.create_pending_document(
+        db, user_id=current_user.id, filename=filename
+    )
+
+    background_tasks.add_task(
+        document_service.process_document,
+        document_id=document.id,
+        # From the verified token, never from request input: this is what scopes
+        # the vector write to the uploader.
+        user_id=current_user.id,
+        filename=filename,
+        text=content,
+    )
 
     return DocumentRead.model_validate(document)
 

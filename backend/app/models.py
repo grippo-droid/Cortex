@@ -64,6 +64,10 @@ class Document(Base):
     status: Mapped[str] = mapped_column(
         String(32), default=DocumentStatus.PENDING, nullable=False
     )
+    # Why an ingestion failed. Ingestion runs in the background, so the upload
+    # response cannot carry the reason any more; without this a failure is a
+    # bare FAILED badge with nothing to act on.
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="documents")
 

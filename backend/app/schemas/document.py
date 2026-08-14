@@ -13,3 +13,6 @@ class DocumentRead(BaseModel):
     uploaded_at: datetime
     chunk_count: int
     status: str
+    # Only set when status is "failed": ingestion happens after the upload
+    # response, so this is where the reason ends up.
+    error: str | None = None

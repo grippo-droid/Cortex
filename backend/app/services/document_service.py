@@ -10,6 +10,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.database import SessionLocal
 from app.models import Document, DocumentStatus
 from app.services import vector_store
 from app.services.chunking import chunk_text
@@ -61,46 +62,97 @@ def get_document(db: Session, user_id: int, document_id: int) -> Document:
     return document
 
 
-def ingest_document(
-    db: Session, user_id: int, filename: str, text: str
-) -> Document:
-    """Chunk, embed, and store a document for one user."""
+def create_pending_document(db: Session, user_id: int, filename: str) -> Document:
+    """Record the upload before any of the slow work begins.
+
+    Committed on its own so the row exists the moment the request returns, which
+    is what lets the dashboard show the document as pending while it is being
+    processed.
+    """
     document = Document(
         user_id=user_id,
         filename=filename,
-        status=DocumentStatus.PROCESSING,
+        status=DocumentStatus.PENDING,
         chunk_count=0,
     )
     db.add(document)
     db.commit()
     db.refresh(document)
 
-    try:
-        chunks = chunk_text(text)
+    return document
 
-        if not chunks:
-            raise ExtractionError("The document contained no usable text.")
 
-        embeddings = embed_texts(chunks)
+def process_document(document_id: int, user_id: int, filename: str, text: str) -> None:
+    """Chunk, embed, and store a document, off the request path.
 
-        vector_store.add_document_chunks(
-            user_id=user_id,
-            document_id=document.id,
-            filename=filename,
-            chunks=chunks,
-            embeddings=embeddings,
+    Opens its own session: this runs after the response has been sent, and the
+    request-scoped session from `get_db` is closed by then.
+
+    `user_id` is passed in from the route, where it came from the verified
+    token. It is used both to scope the update and to choose the vector
+    collection, so a background task can only ever write to the collection of
+    the user who uploaded the document.
+    """
+    with SessionLocal() as db:
+        document = db.scalar(
+            select(Document).where(
+                Document.id == document_id, Document.user_id == user_id
+            )
         )
-    except Exception:
-        document.status = DocumentStatus.FAILED
+        if document is None:
+            # Deleted between the upload returning and this task running.
+            logger.info(
+                "Skipping ingestion for document %s: no longer present", document_id
+            )
+            return
+
+        document.status = DocumentStatus.PROCESSING
         db.commit()
-        logger.exception(
-            "Ingestion failed for document %s (user %s)", document.id, user_id
-        )
-        raise
 
-    document.chunk_count = len(chunks)
-    document.status = DocumentStatus.READY
-    db.commit()
+        try:
+            chunks = chunk_text(text)
+
+            if not chunks:
+                raise ExtractionError("The document contained no usable text.")
+
+            embeddings = embed_texts(chunks)
+
+            vector_store.add_document_chunks(
+                user_id=user_id,
+                document_id=document.id,
+                filename=filename,
+                chunks=chunks,
+                embeddings=embeddings,
+            )
+        except Exception as exc:
+            document.status = DocumentStatus.FAILED
+            # The upload response has already been sent, so this message is the
+            # only thing left explaining what went wrong.
+            document.error = str(exc) or exc.__class__.__name__
+            db.commit()
+            logger.exception(
+                "Ingestion failed for document %s (user %s)", document.id, user_id
+            )
+            return
+
+        document.chunk_count = len(chunks)
+        document.status = DocumentStatus.READY
+        document.error = None
+        db.commit()
+
+
+def ingest_document(
+    db: Session, user_id: int, filename: str, text: str
+) -> Document:
+    """Ingest synchronously, start to finish.
+
+    Kept for callers that need the finished document rather than a pending one,
+    and used by the tests to exercise the pipeline without a background task.
+    """
+    document = create_pending_document(db, user_id=user_id, filename=filename)
+    process_document(
+        document_id=document.id, user_id=user_id, filename=filename, text=text
+    )
     db.refresh(document)
 
     return document
@@ -122,8 +174,10 @@ __all__ = [
     "DocumentNotFoundError",
     "EmbeddingError",
     "RAW_TEXT_FILENAME",
+    "create_pending_document",
     "delete_document",
     "get_document",
     "ingest_document",
     "list_documents",
+    "process_document",
 ]

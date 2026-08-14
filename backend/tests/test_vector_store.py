@@ -143,7 +143,12 @@ def test_chunk_count_matches_what_was_stored(client):
     alice = register(client, "alice@example.com")
     long_text = "Paragraph about isolation. " * 400
 
-    document = upload_text(client, alice["headers"], long_text).json()
+    created = upload_text(client, alice["headers"], long_text).json()
+    # Ingestion runs in the background, so the count is only settled on a
+    # subsequent read, not on the upload response.
+    document = client.get(
+        f"/documents/{created['id']}", headers=alice["headers"]
+    ).json()
 
     hits = vector_store.query_user_chunks(
         alice["user"]["id"], embed_texts(["isolation"])[0], limit=100

@@ -57,7 +57,10 @@ single focused prompt/session.
       relevance threshold, so refusing an out-of-scope question is now a code
       path rather than a hope that the model obeys the prompt. The threshold was
       measured, not guessed: see `measurements/measure_distances.py`.
-- [ ] T5.2 Async ingestion via BackgroundTasks
+- [x] T5.2 Async ingestion via BackgroundTasks — validation stays synchronous so
+      a bad upload still fails loudly; only chunk/embed/vector-write moved. Adds
+      an `error` column so a background failure is debuggable rather than a bare
+      FAILED badge, and polling on the dashboard so the status actually settles.
 - [ ] T5.3 docker-compose full spin-up (app + db + chroma if server mode)
 - [x] T5.4 Frontend: optimistic send — the optimistic append existed from T3.7;
       what was missing was the reconciliation half, so a question that was never

@@ -40,7 +40,15 @@ def make_pdf(pages: int = 1) -> bytes:
 # --------------------------------------------------------------------------
 
 
-def test_upload_txt_creates_a_ready_document(client):
+def test_upload_returns_before_ingestion_finishes(client):
+    """The response is the receipt for the upload, not the finished ingestion.
+
+    Ingestion moved to a background task in T5.2, so the upload returns a
+    document that has not been chunked or embedded yet. TestClient drains
+    background tasks before returning, so the row is already settled by the time
+    the next request runs; the response body is the only place the pre-task
+    state is visible.
+    """
     alice = register(client, "alice@example.com")
 
     response = upload_file(client, alice["headers"], "notes.txt", SAMPLE.encode())
@@ -48,8 +56,25 @@ def test_upload_txt_creates_a_ready_document(client):
     assert response.status_code == 201, response.text
     body = response.json()
     assert body["filename"] == "notes.txt"
-    assert body["status"] == "ready"
-    assert body["chunk_count"] >= 1
+    assert body["status"] == "pending"
+    assert body["chunk_count"] == 0
+    assert body["error"] is None
+
+
+def test_upload_settles_to_ready_once_ingestion_runs(client):
+    alice = register(client, "alice@example.com")
+
+    created = upload_file(
+        client, alice["headers"], "notes.txt", SAMPLE.encode()
+    ).json()
+
+    settled = client.get(
+        f"/documents/{created['id']}", headers=alice["headers"]
+    ).json()
+
+    assert settled["status"] == "ready"
+    assert settled["chunk_count"] >= 1
+    assert settled["error"] is None
 
 
 def test_upload_markdown_is_accepted(client):
@@ -317,10 +342,68 @@ def test_embedding_failure_marks_the_document_failed(client, db):
 
     response = upload_text(client, alice["headers"], SAMPLE)
 
-    assert response.status_code == 502
+    # The upload itself succeeded; the ingestion behind it did not. The failure
+    # is recorded on the document instead of being returned as a status code.
+    assert response.status_code == 201
     stored = db.query(Document).one()
     assert stored.status == "failed"
     assert stored.chunk_count == 0
+    assert stored.error is not None
+    assert "no credits remaining" in stored.error
+
+
+def test_the_failure_reason_reaches_the_api(client):
+    """Without this the dashboard shows a bare FAILED badge and nothing to act on."""
+    from app.services.embeddings import EmbeddingError, set_embedding_provider
+
+    class FailingProvider:
+        def embed(self, texts):
+            raise EmbeddingError("You have no credits remaining.")
+
+    alice = register(client, "alice@example.com")
+    set_embedding_provider(FailingProvider())
+    created = upload_text(client, alice["headers"], SAMPLE).json()
+
+    fetched = client.get(
+        f"/documents/{created['id']}", headers=alice["headers"]
+    ).json()
+
+    assert fetched["status"] == "failed"
+    assert "no credits remaining" in fetched["error"]
+
+
+def test_validation_still_happens_before_the_response(client, db):
+    """Only the slow half moved to the background.
+
+    A rejected upload must still fail loudly at request time rather than being
+    accepted and then quietly marked failed, so the caller can fix and resend.
+    """
+    alice = register(client, "alice@example.com")
+
+    blank = upload_text(client, alice["headers"], "        \n\n   \t  ")
+    unsupported = upload_file(
+        client, alice["headers"], "notes.exe", b"binary rubbish"
+    )
+
+    assert blank.status_code == 422
+    assert unsupported.status_code == 415
+    # Neither attempt left a row behind to explain later.
+    assert db.query(Document).count() == 0
+
+
+def test_background_ingestion_writes_only_to_the_uploader(client, fake_embeddings):
+    """A background task must not become a way into another user's collection."""
+    from app.services import vector_store
+
+    alice = register(client, "alice@example.com")
+    bob = register(client, "bob@example.com")
+
+    upload_text(client, alice["headers"], SAMPLE)
+
+    query = fake_embeddings.embed([SAMPLE])[0]
+
+    assert vector_store.query_user_chunks(alice["user"]["id"], query, limit=10)
+    assert vector_store.query_user_chunks(bob["user"]["id"], query, limit=10) == []
 
 
 def test_a_failed_document_still_appears_in_the_list(client):

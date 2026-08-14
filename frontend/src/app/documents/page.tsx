@@ -21,6 +21,11 @@ function describe(error: unknown, fallback: string): string {
   return error instanceof ApiError ? error.message : fallback;
 }
 
+/** Polling cadence while a document is still being ingested. */
+const POLL_INITIAL_MS = 1000;
+const POLL_BACKOFF = 1.5;
+const POLL_MAX_MS = 5000;
+
 function DocumentsView() {
   const { user, logout } = useAuth();
 
@@ -50,6 +55,49 @@ function DocumentsView() {
       cancelled = true;
     };
   }, []);
+
+  // Ingestion runs in the background, so a freshly uploaded document arrives as
+  // "pending" and settles later. Poll while any document is still being worked
+  // on, and stop as soon as none are: without this the status badge would show
+  // the initial state for ever.
+  useEffect(() => {
+    const unsettled = documents.some(
+      (document) => document.status === "pending" || document.status === "processing",
+    );
+    if (!unsettled) {
+      return;
+    }
+
+    let cancelled = false;
+    let delay = POLL_INITIAL_MS;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const poll = async () => {
+      try {
+        const listed = await listDocuments();
+        if (!cancelled) setDocuments(listed);
+      } catch {
+        // A failed poll is not worth an error banner; the next one may work,
+        // and the list on screen is still the last known good state.
+      }
+
+      if (cancelled) {
+        return;
+      }
+
+      // Back off, so a document stuck processing does not poll every second for
+      // as long as the page is open.
+      delay = Math.min(delay * POLL_BACKOFF, POLL_MAX_MS);
+      timer = setTimeout(poll, delay);
+    };
+
+    timer = setTimeout(poll, delay);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [documents]);
 
   /** Runs one upload with an optimistic row, returning true on success. */
   const runUpload = useCallback(

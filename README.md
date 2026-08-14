@@ -255,9 +255,12 @@ genuinely belong to someone else.
 
 ## How it works
 
-**Ingestion.** An upload is extracted (PDF via pypdf, text as-is), split into
-overlapping character-based chunks, embedded in one batch, and written to the
-uploader's own Chroma collection with its filename and chunk index attached.
+**Ingestion.** An upload is validated and extracted (PDF via pypdf, text as-is)
+while the request is still open, then recorded as `pending` and returned. The
+rest — splitting into overlapping character-based chunks, embedding them in one
+batch, and writing them to the uploader's own Chroma collection with filename
+and chunk index attached — runs in the background, moving the document through
+`processing` to `ready` or `failed`. The dashboard polls until it settles.
 
 **Retrieval.** A question is embedded and compared against that user's
 collection only. Hits further away than `RETRIEVAL_MAX_DISTANCE` are dropped as
@@ -500,13 +503,34 @@ metric would, but the value has **not** been verified against
 `text-embedding-3-small`. Re-run `docs/measurements/measure_distances.py` after
 switching, and adjust if the bands differ.
 
+### Ingestion is background work, not a durable queue
+
+Uploads return as soon as the document is recorded, and chunking, embedding and
+the vector write happen in a FastAPI `BackgroundTasks` callback. That keeps a
+large PDF from holding its request open, but the work runs **in the same
+process**: it does not survive a restart, there is no retry, and no second
+worker will pick it up. A process killed mid-ingestion leaves that document
+stuck in `processing` with no automatic recovery, and the only way out is to
+delete it and upload again.
+
+Validation is deliberately not deferred. An unsupported file type or an
+oversized upload is still refused at request time with a real status code;
+only the slow half moved. Failures inside the background task are recorded on
+the document and shown in the dashboard, since the upload response has already
+been sent by then.
+
+A real deployment would move this to a durable queue (Celery, RQ, or an outbox
+table polled by a worker) so ingestion survives restarts and can be retried.
+
 ### Other disclosed limitations
 
 - No rate limiting on the auth endpoints. Deferred deliberately; it is the one
   hardening item consciously left undone.
 - No refresh-token rotation; a single 24-hour JWT.
 - No email verification on registration.
-- Ingestion is synchronous, so a large PDF holds its upload request open.
+- No database migrations. `create_all` builds missing tables, and a small
+  guarded step adds columns introduced after the first release; anything beyond
+  that needs Alembic.
 - SQLite and embedded Chroma suit a single-process deployment; multi-process
   scaling would want Postgres and a Chroma server.
 - HTTPS is assumed to terminate in front of the app; local development is plain
