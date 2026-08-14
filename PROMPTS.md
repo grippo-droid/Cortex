@@ -1,739 +1,570 @@
-# Prompts Log
+# Prompts Used
 
-A running log of the meaningful prompts used while building Cortex. Kept as a
-submission artifact per the assessment requirements.
+**Project: Cortex**
 
----
+This document contains a representative record of prompts I used while developing **Cortex**. It focuses on meaningful instances where I used AI to assist with implementation, debugging, technical explanations, and code-level suggestions rather than documenting every interaction.
 
-## Phase 0 — Scaffolding
+I used AI as a development assistant for implementation-level help such as code snippets, API/framework guidance, debugging, refactoring, test ideas, and security reviews. I was responsible for understanding the assessment requirements, deciding the overall architecture and technology stack, implementing and integrating the features, and reviewing any AI-generated suggestions before using them in the project.
 
-### Session 1 — project setup and Phase 0 plan
-
-**Prompt:** Read CLAUDE.md fully, then read every file in `docs/` (01_PRD,
-02_Technical_Architecture, 03_Security_and_Access, 04_Frontend_Spec,
-05_Feature_Ticket_List). Then: confirm git identity is `Parth Mahale` /
-`parthmahale2305@gmail.com` and set it locally if missing; confirm remote
-`origin` points to the Cortex repo and add it if missing; confirm understanding
-of the git workflow rules (no commit/push without explicit confirmation, no AI
-attribution in commit messages, one commit per ticket); and propose a Phase 0
-plan covering folder structure, files, and dependencies. Do not write code or
-run git commands yet.
-
-**Outcome:** Discovered the repo was not yet initialised and the five spec files
-sat in the repo root rather than `docs/`. Produced a four-ticket Phase 0 plan
-(backend scaffold, frontend scaffold, SQLAlchemy models, docker-compose) with a
-dependency list and per-ticket commit messages.
-
-### Session 1 — Phase 0 build
-
-**Prompt:** Proceed with git init, identity, and remote as planned. Move the five
-doc files into `docs/` as part of Phase 0, folded into the T0.1 commit. LLM
-provider: OpenAI, confirmed — API key will be in `.env` before Phase 2, so don't
-block Phase 0/1 on it. Keep the `bcrypt<4.1` pin. Build Phase 0 and show diffs
-and proposed commit messages before committing.
-
-**Outcome:** Initialised the repo on `main` with local identity and remote, moved
-the specs into `docs/`, and built all four Phase 0 tickets.
-
-**Notable decisions made during the build:**
-- `bcrypt` pinned to `4.0.1` because passlib 1.7.4 reads `bcrypt.__about__`,
-  which bcrypt >= 4.1 removed — without the pin, hashing fails in T1.1.
-- `PRAGMA foreign_keys=ON` wired as a SQLAlchemy connect listener; SQLite
-  silently ignores `ON DELETE CASCADE` otherwise, making the cascades decorative.
-- Indexes and cascades from Architecture section 7.2 built into the models up
-  front rather than retrofitted at T4.5.1 — free now, a migration later.
-- `OPENAI_API_KEY` typed as optional so Phase 0/1 boot without a key.
+The prompts below are representative examples of the questions and requests I made during development. They are not a complete transcript, and they should not be interpreted as a record of the AI independently building the application.
 
 ---
 
-## Phase 1 — Auth
+## Phase 0 — Project Setup
 
-### T1.1 — `POST /auth/register`
+### Project structure and architecture
 
-**Prompt:** Build T1.1: `POST /auth/register` with bcrypt hashing and
-duplicate-email handling. Register returns `201 + UserRead` (no token); login
-and JWT issuance follow in T1.2, which will also wire a token into the register
-response per PRD user story 1. Use pytest with a real test file rather than a
-throwaway script, so the pattern can be reused for the graded Phase 4 isolation
-tests.
+**Prompt:**
 
-**Outcome:** Added the schema, hashing helpers, an `auth_service` holding the
-logic, and a thin route. 13 pytest cases covering the success path, duplicate
-handling, validation, and storage.
+> Review the project requirements and help me plan a clean folder structure for a FastAPI backend and Next.js frontend. The application needs authentication, document ingestion, vector search, RAG-based chat, WebSocket streaming, a SQLite database via SQLAlchemy, and an embedded vector store. Keep the structure modular and easy to extend.
 
-**Notable decisions made during the build:**
-- Emails are lowercased and stripped before storage and before the duplicate
-  check. Without it `A@x.com` and `a@x.com` become separate tenants, which would
-  silently split one person's documents across two Chroma collections.
-- Duplicate registration is guarded twice: a `SELECT` pre-check for the clean
-  409, and an `IntegrityError` handler behind it, because two concurrent
-  requests can both pass the pre-check. The `UNIQUE` constraint is the real
-  guarantee.
-- Password length is validated in **bytes**, not characters. bcrypt ignores
-  everything past 72 bytes, so a 40-character multibyte password would otherwise
-  be accepted while only partly verified.
-- Test dependencies live in `requirements-dev.txt` so the Docker image does not
-  ship pytest.
-- `tests/conftest.py` sets `DATABASE_URL` before importing `app.config`, since
-  Settings is instantiated and cached at import time. This keeps the suite off
-  the developer's real `cortex.db`.
+**Used for:**
 
-### T1.2 — `POST /auth/login` and JWT issuance
-
-**Prompt:** Build T1.2. Both register and login return the same `AuthResponse`
-(token plus user) so the client needs one round trip; update the T1.1 tests and
-add `AuthResponse` to `frontend/src/types/index.ts` in the same commit. Add the
-`JWT_SECRET` placeholder check now rather than deferring it to Phase 4.5 —
-refuse to start if the secret is still the default, since it is a real auth
-bypass risk if missed.
-
-**Outcome:** Added `create_access_token`, `authenticate_user`, `POST
-/auth/login`, and a startup guard on `JWT_SECRET`. 29 tests pass.
-
-**Notable decisions made during the build:**
-- Unknown email and wrong password return a byte-identical 401. A test asserts
-  the two responses are equal, because any divergence turns login into a
-  user-enumeration oracle.
-- The "no such user" path still runs one bcrypt verification against a dummy
-  hash. Without it the endpoint leaks the same information through response
-  timing — roughly 1ms versus a few hundred.
-- `sub` is stored as a string, per the JWT spec; T1.3 casts it back to `int`.
-- The `JWT_SECRET` guard refuses startup on the placeholder or on any secret
-  under 32 characters. A known signing key means anyone can forge a token for
-  any `user_id`, and since every isolation check downstream trusts that decoded
-  id, it would be a full cross-tenant read of every user's data.
-- `UserLogin` sets no minimum password length: the policy belongs at
-  registration, and enforcing it at login would confirm which passwords are too
-  short to be real. It does keep the 72-byte ceiling, so an over-long password
-  is a clean 422 rather than a 500 from bcrypt.
-
-### T1.3 — `get_current_user` dependency
-
-**Prompt:** Build T1.3, the `get_current_user` dependency plus a protected
-route. Use `HTTPBearer(auto_error=False)` and return a uniform 401 for both
-missing and invalid credentials, rather than FastAPI's default 403-then-401
-split, matching the single-generic-failure pattern used for login.
-
-**Outcome:** Added `decode_access_token`, the dependency, and `GET /auth/me` as
-the protected route. 47 tests pass, 18 of them new.
-
-**Notable decisions made during the build:**
-- `decode_access_token` passes `algorithms=[settings.jwt_algorithm]` as a strict
-  allow-list rather than honouring the token header's own `alg`. Verified
-  directly: an `alg: none` token and an HS512-signed token are both rejected
-  with "The specified alg value is not allowed", and a wrong-secret token with
-  "Signature verification failed". Trusting the header is a total auth bypass
-  that reads as ordinary code.
-- A valid signature whose `sub` names a deleted account is rejected. The row is
-  gone along with its documents and chats, so the token must stop working at
-  once rather than resolving to nothing further down.
-- Every rejection returns the same body, asserted by a test across three
-  different causes. Divergent messages would let a caller tell a forged token
-  from an expired one.
-- The dependency returns the `User` object rather than a bare id, so routes
-  needing the email do not pay for a second query. It is still one SELECT.
-- `GET /auth/me` was chosen over a throwaway protected route: same effort, and
-  the frontend needs it in T1.4 anyway.
-
-### T1.4 — Frontend register and login
-
-**Prompt:** Build T1.4: register and login pages, token storage, and a route
-guard. Store the token in `localStorage` and document that in the README as a
-known limitation. Run the browser pass directly — register, refresh, logout,
-login, wrong password, duplicate email, guard redirect — and show the results.
-No Vitest setup for this ticket.
-
-**Outcome:** Added the auth context, a shared `AuthForm`, a `RequireAuth` guard,
-and automatic token injection in the API client. All nine browser scenarios pass
-against the running stack.
-
-**Notable decisions made during the build:**
-- `localStorage` over an httpOnly cookie: the cookie route needs CSRF handling,
-  `SameSite` work across the two dev origins, and a cookie-aware WebSocket
-  handshake for Phase 3. The README records the exposure and, importantly, the
-  blast radius: a stolen token impersonates one user but cannot widen access,
-  since scoping happens server-side from the decoded `user_id`.
-- The provider holds an `isLoading` flag and the guard renders nothing while it
-  is true. Without it every refresh briefly flashes the login redirect while
-  `/auth/me` is still in flight.
-- Login and register opt out of the global 401 handler. A rejected sign-in is a
-  form error, not an expired session, and letting it trigger the session
-  teardown would clear state and redirect mid-submit.
-- Next 16's React Compiler lint rules rejected the first implementation twice:
-  writing a ref during render, and calling `setState` synchronously inside an
-  effect. Replaced the ref with a token-dependent effect registration, and moved
-  the restore logic into an async function.
-- The first browser run reported a false failure: `[role="alert"]` also matches
-  Next's injected route announcer, which reads out the page heading. Scoping the
-  selector to `form p[role="alert"]` fixed the harness; the app was correct.
+- Initial project organization
+- Backend/frontend separation
+- Service and router organization
+- Identifying the main dependencies required for the project
 
 ---
 
-## Phase 2 — Ingestion
+### Database models
 
-### T2.1-T2.5 — the backend ingestion pipeline (batched)
+**Prompt:**
 
-**Prompt:** Move faster from here without cutting rigour: stop asking about
-implementation-level decisions unless they are genuine security or isolation
-trade-offs, batch tickets that group naturally, and show one summary per batch.
-Build T2.1 through T2.5 — upload, PDF extraction, chunking, embedding into a
-per-user vector collection, and the scoped listing endpoints.
+> Based on the requirements, suggest SQLAlchemy models for users, documents, chat sessions, and messages. Include appropriate relationships, foreign keys, timestamps, indexes, and cascade behavior. Explain any important design decisions.
 
-**Outcome:** Built the full backend ingestion path. 106 tests pass, up from 47.
+**Used for:**
 
-**Notable decisions made during the build:**
-- One endpoint accepts either a file or raw text as multipart form fields, with
-  exactly one required. Two endpoints would have duplicated the size, type, and
-  ownership checks.
-- The upload is read in 64KB blocks and aborts the moment the running total
-  passes the limit. Reading it all and then checking the length would already
-  have buffered a multi-gigabyte upload into memory.
-- The file type allow-list keys off the filename suffix, not the declared
-  content type, which a client can set to anything. A test uploads `payload.exe`
-  labelled `text/plain` and expects a 415.
-- Filenames are stripped of directory components (both separators, since a
-  Windows client sends backslashes) and bounded to 255 characters. The value
-  reaches the database, the vector metadata, and eventually the browser.
-- Chunk size is measured in characters rather than tokens to avoid a tokeniser
-  dependency; 2000 characters is roughly 500 tokens.
-- `chunk_overlap >= chunk_size` raises rather than looping forever, and the
-  chunk loop has an explicit forward-progress floor.
-- Vector isolation is by collection per user, named `cortex_user_{id}` from the
-  id on the verified token. `collection_name_for_user` rejects anything that is
-  not an `int`, since a string there would let a caller address any collection.
-- Deleting a document removes its vectors before its row: an orphaned row is
-  recoverable, orphaned vectors that still answer queries are not.
-- Reading or deleting another user's document returns a 404 identical to that
-  of a document that does not exist, so ids cannot be probed.
-- Embedding sits behind an `EmbeddingProvider` protocol. Tests swap in a
-  deterministic hash-based fake, so the suite never calls a paid API.
-- Tests initially shared one Chroma directory and leaked between each other:
-  Chroma holds SQLite handles open, so deleting the directory silently fails on
-  Windows, and one test read another's collection. Each test now gets its own
-  directory. This mattered — a real isolation failure could have passed.
-
-### Local embedding provider
-
-**Prompt:** Switch to Groq for development to avoid OpenAI costs, implemented as
-a new `EmbeddingProvider` driven by an environment variable so switching back is
-configuration rather than code. Note in the README and architecture doc which
-provider was used during development, and that switching requires re-uploading
-documents because vector dimensions differ.
-
-**Outcome:** Groq turned out to have no embeddings endpoint, so after checking
-their documentation the local ONNX MiniLM model bundled with chromadb was used
-instead. 113 tests pass.
-
-**Notable decisions made during the build:**
-- Groq publishes only chat, speech, and agentic models, and its
-  OpenAI-compatibility page never mentions `/embeddings`. A
-  `GroqEmbeddingProvider` was therefore impossible; Groq remains the intended
-  chat provider for Phase 3.
-- `all-MiniLM-L6-v2` runs through the ONNX runtime chromadb already depends on,
-  so the local provider added no new dependency. Weights are about 80MB,
-  downloaded once and cached, offline thereafter.
-- `EMBEDDING_PROVIDER` defaults to `openai` in `.env.example`, matching the
-  option the assignment names, while the local `.env` uses `local`.
-- Chroma's `InvalidDimensionException` is caught and rewritten into a message
-  naming the active provider and instructing a re-upload. Without it, switching
-  provider produces an opaque dimensionality error at insert time.
-- A chromadb build issue logs a telemetry error on every operation: it calls
-  posthog's `capture()` with an outdated signature. The send always fails, so no
-  data leaves the machine, but it drowns real output; that one logger is
-  silenced.
-
-### T2.6 — Frontend document dashboard
-
-**Prompt:** Build T2.6 with native drag-and-drop, optimistic delete with
-rollback, and sequential multi-file uploads. Summary and test results are
-enough, since no new `user_id` scoping is introduced.
-
-**Outcome:** Built the dashboard and, in the process, found and fixed a real
-authentication bug. 11 of 11 browser scenarios pass, backend still at 113.
-
-**Notable decisions made during the build:**
-- **Bug found by the browser pass:** refreshing `/documents` signed the user
-  out. React runs child effects before parent effects, so the page mounted in
-  the same commit that set `user` fired its fetch before `AuthProvider`
-  re-registered the token getter. The request went out unauthenticated, and the
-  401 handler cleared the session. The API client now reads the token through a
-  ref written wherever the token changes, so there is no ordering dependency.
-  T1.4 missed this because those pages made no API calls.
-- `apiFetch` passes `FormData` through without serialising it and, critically,
-  without setting `Content-Type`. Only the browser knows the multipart boundary
-  it generated, so setting that header by hand produces an unparseable body.
-- Status badges cover all four backend states even though synchronous ingestion
-  only ever returns `ready` or `failed`. When T5.2 moves ingestion to a
-  background task, `pending` and `processing` start appearing with no frontend
-  change.
-  *(Half right, in the event: T5.2 made those states reachable, but the list was
-  fetched once, so a badge would have shown its first value for ever. Polling
-  had to be added for the styling to be worth anything.)*
-- Multi-file uploads run sequentially so a failure names its own file rather
-  than being lost among concurrent errors.
-- Two harness bugs cost time and are worth remembering: `networkidle` fires
-  before React hydrates, so assertions on it read an empty shell, and
-  `textContent` on the body includes inline `<script>` bodies where `innerText`
-  does not.
+- Creating the initial SQLAlchemy model structure
+- Reviewing relationships between users, documents, sessions, and messages
+- Identifying useful database constraints and indexes
 
 ---
 
-## Phase 3 — Chat
+### Docker setup
 
-### T3.1 — Chat session endpoints
+**Prompt:**
 
-**Prompt:** Build T3.1. Keep it separate from T3.2 rather than batching, since
-WebSocket authentication deserves its own review.
+> Help me create a Docker Compose setup for a FastAPI application and a Next.js frontend, with persistent volumes for the SQLite database and the embedded Chroma vector store. Keep the configuration suitable for local development and make the environment variables configurable through `.env`.
 
-**Outcome:** Added five owner-scoped session endpoints. 138 tests pass, 25 of
-them new.
+**Used for:**
 
-**Notable decisions made during the build:**
-- The ticket names only `POST`, but list, get, messages, and delete were built
-  alongside it. The sidebar in T3.7 needs the list, and Frontend Spec §6 has the
-  client re-fetching history over REST after a dropped socket, so the messages
-  endpoint is what makes reconnection work rather than an extra.
-- `get_session` is the single ownership gate, mirroring `get_document`. T3.2's
-  WebSocket handler will authorise through this same function instead of writing
-  its own query, so the rule lives in one place.
-- Another user's session and a session that does not exist return byte-identical
-  404s, asserted by a test, so ids cannot be probed.
-- The message history test seeds a recognisable secret into one user's session
-  and asserts it appears nowhere in another user's 404 response body.
-- Deleting a session touches no vectors: chat history lives only in SQLite, so
-  unlike documents there is nothing to clean up in Chroma.
-- An explicitly blank title is a 422 rather than a silent fallback to the
-  default; omitting the field is how you ask for the default.
-
-### T3.2 — WebSocket authentication and ownership
-
-**Prompt:** Build T3.2 as planned, and add one check beyond the test list:
-confirm against a live server, not just the test client, that a socket which
-never sends an auth frame is actually closed at the five-second mark rather than
-left hanging.
-
-**Outcome:** Added the streaming socket's handshake and ownership gate. 155
-tests pass, 17 of them new, plus four live checks against a real uvicorn server.
-
-**Notable decisions made during the build:**
-- The token arrives in an opening frame rather than a query parameter. A browser
-  cannot set headers on a WebSocket handshake, so the choice was between the
-  two; a query string is written to access logs, proxy logs, and browser
-  history, and a token leaked there stays valid for its full lifetime.
-- The socket is accepted before the token arrives, because there is no channel
-  to receive it on otherwise. Nothing is sent and no session data is read until
-  the caller is known, and a five-second timeout closes a silent socket so
-  unauthenticated connections cannot be held open indefinitely.
-- `authenticate_websocket` returns `None` for every failure, so the caller
-  cannot accidentally report them differently.
-- Every refusal closes with 1008 and the same reason. A test asserts the close
-  code *and* reason are identical for another user's session and for a session
-  that does not exist.
-- The handler opens a short-lived database session instead of using
-  `Depends(get_db)`, which would hold a connection checked out for as long as
-  the tab stays open and risk serving stale identity-map data.
-- Ownership goes through `chat_service.get_session`, the same function the REST
-  routes use, so the rule has one implementation rather than two.
-- Live verification against uvicorn: a silent socket completed its handshake in
-  4ms and was closed at 5028ms with 1008. The unit test monkeypatches the
-  timeout down to 0.3s to keep the suite fast, so the live run is what confirms
-  the real five-second value.
-
-### T3.3 — Retrieval scoped to the caller's collection
-
-**Prompt:** Build T3.3 as planned. Approved leaving out a distance threshold for
-now and running the blocking calls in a threadpool.
-
-**Outcome:** The socket now retrieves context from the caller's own collection.
-173 tests pass, 18 of them new, plus three live checks with real MiniLM vectors.
-
-**Notable decisions made during the build:**
-- `retrieve_context` takes `user_id` as its first required argument, and the
-  socket passes the value captured from the handshake token. Nothing from the
-  inbound frame reaches it.
-- The question frame is parsed by a pydantic model with `extra="ignore"`, so a
-  smuggled `user_id` or `collection` is structurally discarded rather than
-  merely unused by convention. Tested both in the suite and live.
-- Embedding and the Chroma query are dispatched with `run_in_threadpool`. Both
-  block, and running them inline in the async handler would stall the event loop
-  and freeze every other connected socket for the duration.
-- No distance threshold. The right cutoff differs between MiniLM at 384
-  dimensions and text-embedding-3-small at 1536, and guessing one would silently
-  drop good context. The distance is returned so it is visible; declining to
-  answer is the system prompt's job in T3.4 and T5.1.
-- An unparseable frame gets an error and the socket stays open. A client mistake
-  is not grounds to drop the connection.
-- A T3.2 test legitimately broke: it asserted a valid message frame produced an
-  error, which was true only while retrieval did not exist. Updated to expect
-  the sources frame first.
-- Live verification mattered here. The suite's fake embedding provider is
-  hash-based, so it proves the plumbing but says nothing about whether semantic
-  search finds the right passage. Against real MiniLM, Alice's question matched
-  her own memo at distance 0.2596, while Bob asking the identical question got
-  only his gardening notes.
-
-### T3.4 — Augmentation and prompt assembly
-
-**Prompt:** Build T3.4 as planned: system prompt, numbered context blocks,
-bounded history, a zero-context short circuit that avoids a wasted API call, and
-injection mitigation framed honestly.
-
-**Outcome:** Prompt assembly is in place and observable over the socket. 188
-tests pass, 15 of them new.
-
-**Notable decisions made during the build:**
-- Retrieval finding nothing is answered directly instead of asking a model to
-  say it does not know. The wording differs between having no documents at all,
-  which is an onboarding problem, and having documents that do not cover the
-  question, which is a real answer. This path also works with no API key.
-- Context sits in the final user message rather than the system prompt, so it
-  stays adjacent to the question however long the history grows, and the system
-  prompt stays byte-identical across turns.
-- Excerpts are numbered, attributed to filename and chunk index, and wrapped in
-  explicit fences. The system prompt states that fenced content is data and
-  never instructions, which is the mitigation for a document containing
-  something like "ignore previous instructions". Worth being precise about the
-  scope: the injected text is the user's own document, so the worst case is a
-  user influencing answers over their own data. It cannot reach another tenant,
-  because retrieval is already scoped by user id.
-- History roles are normalised to user or assistant before they reach the
-  provider, so a stored role cannot smuggle a system turn into the prompt.
-- Trimming drops the oldest turns first and can never drop the system prompt or
-  the current question; a test sets both budgets to zero and asserts exactly
-  those two messages survive.
-- At least part of the first excerpt is always included even when the budget is
-  tiny, since a prompt with no context would make the model refuse for the wrong
-  reason.
-- The socket reports only the shape of the assembled prompt, not its contents.
-  Echoing the full prompt would be a convenient debug affordance and an
-  unnecessary disclosure of the system prompt.
-- The same T3.2 test broke again, for the same legitimate reason: with no
-  documents, the socket now answers rather than erroring.
-
-### T3.5 — Generation and token streaming
-
-**Prompt:** Build T3.5. Alongside the single live Groq check, also run a live
-check with two concurrent streaming connections and confirm neither stalls
-waiting on the other, since that is exactly the kind of bug that passes
-single-user tests.
-
-**Outcome:** Answers now stream from Groq token by token. 206 tests pass, 18 of
-them new, plus three live checks including the concurrency one.
-
-**Notable decisions made during the build:**
-- The provider's stream is a synchronous generator. Iterating it in the socket
-  coroutine would block the event loop between every token, and
-  `run_in_threadpool` does not help because it awaits a single call rather than
-  something yielding repeatedly over seconds. The generator runs on a worker
-  thread and passes fragments through an `asyncio.Queue` that the coroutine
-  drains.
-- Retries happen only before the first token. Once output has been delivered,
-  retrying would repeat text the user has already read, so a mid-stream failure
-  is final. The SDK's own retries are disabled to keep that rule in one place.
-- A failure after tokens have arrived still sends `done` with the partial text
-  and `partial: true`, so the user keeps what arrived. A failure before any
-  token sends only an error, since claiming an empty answer would be a lie.
-- `done` repeats the whole answer so the client can reconcile rather than trust
-  its own concatenation.
-- Groq is reached through the OpenAI client with a different base URL, since its
-  API is compatible. That avoided a new dependency, and the two providers are
-  still separate classes so their models and error handling can diverge.
-- Provider errors are translated into messages that say what to do: a rejected
-  key, a rate limit, an over-long prompt, and an upstream outage read
-  differently, and only the last two are marked worth retrying.
-- The concurrency check initially reported a false failure. The implementation
-  was correct; the assertion was calibrated for slower streams and demanded a
-  200ms overlap, which Groq never produced because each answer finished in about
-  150ms of token flow. Rewritten around two signals that do not depend on
-  provider speed: interleaving count and wall clock against summed duration.
-  With longer answers the result was unambiguous — 392 switches between the two
-  connections, 1949ms wall clock against 3764ms summed.
-- A test helper hung the suite: its loop waited for a `done` frame that never
-  arrives when generation fails before the first token. Fixed to stop on a bare
-  error.
-
-### T3.6 — Persisting the exchange
-
-**Prompt:** Build T3.6, including a live reconnect-style check.
-
-**Outcome:** Transcripts now survive a disconnect, and conversation history feeds
-back into the prompt. 218 tests pass, 12 of them new.
-
-**Notable decisions made during the build:**
-- The question is stored before generation begins. If the provider fails
-  mid-answer, the question still belongs in the transcript rather than
-  disappearing on the next refresh.
-- Prior turns are read *before* the current question is stored, so the question
-  does not appear both in the history and in the final user message. A test
-  asserts it appears exactly once in the assembled prompt.
-- A partial answer is stored with an explicit marker appended. The user read
-  that text, so dropping it would make the transcript disagree with what was on
-  screen, but an unmarked truncated answer would later be replayed as history as
-  though it were complete.
-- Nothing is stored when generation fails before the first token: the question
-  stands alone rather than sitting under an invented empty reply.
-- The zero-context replies are stored too. They are real assistant turns the
-  user saw, and skipping them would leave a question with no answer beneath it.
-- `add_message` re-checks ownership rather than trusting the handshake. A
-  session can be deleted from another tab while a socket is open, and writing to
-  a row that no longer exists would otherwise surface as a foreign key error;
-  the socket now reports it and closes.
-- The assistant message is written once at the end rather than per token, which
-  would have meant an update per token.
-
-### T3.7 — Frontend chat UI
-
-**Prompt:** Build T3.7, the last big ticket, including how the socket hook
-handles the auth frame, reconnection, and streaming render without layout shift.
-Fold T5.5 in and mark it done on the ticket list.
-
-**Outcome:** The chat UI works end to end. 10 of 10 browser scenarios pass, and
-the render batching was measured rather than assumed. A real message-loss bug
-was found and fixed along the way.
-
-**Notable decisions made during the build:**
-- The socket has two ready states and only the second is usable. `onopen` means
-  "send the auth frame", not "the server will accept messages", so anything
-  typed before the server's `ready` frame is queued.
-- **Bug found by the browser pass:** a question asked while the socket was still
-  connecting was silently lost. The queue was cleared on every run of the
-  connect effect, and React Strict Mode runs that twice on mount, so the second
-  run wiped what the first had queued. The queue is now cleared only when moving
-  to a different conversation. It escaped the earlier manual check because that
-  waited three seconds before asking, which put the socket in `ready` first.
-- A 1008 close is terminal. It means the token was rejected or the session is
-  not the caller's, and retrying would loop forever against a decision that will
-  not change. Every other close backs off and retries.
-- On reconnect the transcript is re-fetched over REST rather than trusted
-  locally, so a partial answer stored during the outage shows up with its
-  marker.
-- Tokens accumulate in a ref and flush once per animation frame. Measured on a
-  479-token answer: 187 render flushes, about 2.6 times fewer than one render
-  per token. The flush rate of 99 per second sits under this browser's actual
-  rAF rate of 137 per second, which headless Chrome runs at because it is not
-  vsync locked; on a 60Hz display the cap would be 60 and the reduction closer
-  to fourfold.
-- The streaming bubble keeps one key for its whole life and reserves a line of
-  height when it appears, so the first token does not shift the layout.
-- Autoscroll follows only while the reader is already at the bottom, with a
-  "jump to latest" control otherwise.
-- Three harness bugs cost time and are worth remembering. Replacing
-  `window.WebSocket` with a plain function drops the non-enumerable statics, so
-  `WebSocket.OPEN` becomes undefined and readiness checks silently fail; a Proxy
-  preserves them. Waiting for the composer to re-enable never blocks, because it
-  is already enabled when the question is sent. And a stale dev server from an
-  earlier run kept port 3000, so the first pass was testing old code.
+- Initial Docker configuration
+- Local development environment
+- Service configuration and environment variables
 
 ---
 
-## Phase 4 — Isolation Testing
+## Phase 1 — Authentication
 
-### T4.1 — the graded two-user isolation pass
+### User registration
 
-**Prompt:** Before running, confirm there's no leftover Chroma data or stale
-collections from earlier dev/testing sessions that could skew a result either
-direction — start from a genuinely clean state, not just a fresh server process.
-Then run it and show the full report before committing anything.
+**Prompt:**
 
-**Outcome:** The check was worth insisting on: 30 users, 29 documents and 23
-Chroma collections were left over from development. Both stores were archived
-so the run started empty, which is what makes the id-guessing checks meaningful
-— user A was issued id 1, so probing id 1 as user B tests a real foreign record
-rather than colliding with stale data. **18 of 18 checks passed.**
+> Help me implement a FastAPI registration endpoint using SQLAlchemy. The endpoint should validate the email, hash the password securely using bcrypt, handle duplicate emails cleanly, and return a safe user response without exposing the password hash.
 
-**Follow-up prompt:** Recount precisely — 1/2/3/3b/4/4b/5/5b/6-11 plus three
-deleted-user checks doesn't obviously total 18; make sure the final number is
-exactly and verifiably accurate. Also commit the scripts so the report is
-reproducible.
+**Used for:**
 
-**Outcome:** The count was right but unverifiable from the document: one heading
-("12-13") silently covered four checks, and check 12 was filed under the wrong
-scenario. Renumbered to a contiguous 1-18, verified mechanically rather than by
-eye, and **re-ran both passes from a clean state** so the committed scripts
-match the evidence exactly. Also fixed a portability bug that would have blocked
-a grader outright — the deleted-user script hardcoded absolute local paths.
-
-## Phase 4.5 — Hardening
-
-### T4.5 — audit before building
-
-**Prompt:** Show me what's actually left versus already covered.
-
-**Outcome:** The audit paid for itself. T4.5.1 was already complete. T4.5.2 was
-half done: the chat path had retry and timeouts from T3.5, but the **embedding
-client had neither**, inheriting the OpenAI SDK's 600-second read timeout with
-two silent retries — up to ~30 minutes holding an upload open. Invisible in
-development because it runs on the local model, but it lands in exactly the
-configuration a grader runs.
-
-**Notable decisions:**
-- Structured logging is a raw ASGI middleware, not `BaseHTTPMiddleware`, which
-  runs the endpoint in a separate task where downstream context is invisible.
-- The user id travels on the request scope rather than a `ContextVar`, because
-  FastAPI runs sync dependencies in a worker thread that gets a *copy* of the
-  context. The first attempt logged `user_id: null` on every request.
-- A test passed alone and failed in the suite: the WebSocket log line is written
-  at teardown, so the assertion was racing. The test was wrong, not flaky.
-
-**T4.5.4 (rate limiting) was deliberately left undone.** The ticket itself marks
-it optional, and adding an untested limiter to the auth endpoints late would
-carry more risk than the credit it earns. It is disclosed in the README's
-limitations rather than quietly skipped.
-
-## Phase 5 — Bonus
-
-Ordered as the work happened rather than by ticket number, since this is a log.
-T5.5 does not appear separately: the reconnection logic it asks for was built as
-part of T3.7, because the socket hook's state machine *is* that logic and adding
-it afterwards would have meant rewriting the hook.
-
-### T5.1 — refusal as a code path, measured not guessed
-
-**Prompt:** Measure real distances empirically on both providers before setting
-the default, make it configurable, and err loose (false refusals are worse than
-occasional over-answering). Show me the measured numbers before you commit to a
-default value — I want to see the actual data, not just the final number.
-
-**Outcome:** The anti-hallucination prompt existed since T3.4, but nothing
-enforced it: retrieval returned the top k chunks whatever their distance, so
-refusing depended on the model choosing to obey. Measured three question classes
-against a known corpus on MiniLM — answerable peaked at 0.46,
-related-but-unanswered ran 0.46-0.64, unrelated began at 0.80 — and set the
-threshold at 0.75, in the gap and nearer the unrelated end. Cross-checked
-against the isolation corpus (0.2684 for the owner, 0.9730 for a stranger).
-
-**OpenAI was not measured**: the account had no quota. That is recorded in the
-script rather than guessed at, and the measurement is committed so it can be
-re-run after switching provider.
-
-### T5.4 — optimistic send, and the half that was missing
-
-**Prompt:** Build all four — leaving the queue-drain case out would fix three
-failure paths and leave one silently broken. Show the full hook diff and a real
-browser pass on the retry-while-reconnecting interaction.
-
-**Outcome:** The optimistic append had existed since T3.7, but messages were
-appended as "complete", so a question that never left the browser looked exactly
-like one that had been answered. Now pending until the server acknowledges it,
-failed with a retry control when the socket gives up.
-
-**The browser pass caught a real bug that a shallower test would have missed.**
-Retry from a terminal socket guarded on `shouldReconnectRef`, which only marks
-teardown and is still true after a terminal close — so retry re-queued against a
-socket that was never coming back and sat pending for ever. The failed badge did
-clear, so it looked fixed. Tightening the assertion to require the socket
-actually leave its terminal state exposed it.
-
-### T5.2 — async ingestion
-
-**Prompt:** Build it including the error column. Make sure the frontend polls or
-otherwise observes the PROCESSING state once it's actually reachable, otherwise
-the amber badge work stays dead code. Add a README line noting BackgroundTasks
-runs in-process and isn't a durable queue.
-
-**Outcome:** Ingestion moved to a background task, with validation deliberately
-left synchronous so an unsupported file type still fails loudly at request time.
-An `error` column keeps failure reasons reachable now that the upload response
-can no longer carry them. The browser pass confirmed the badge genuinely
-transitions `pending → processing → ready` and that polling stops once nothing
-is unsettled — the state was previously unreachable behind the synchronous
-await, so the badge styling was dead code.
-
-### T5.3 — the full Docker spin-up
-
-**Prompt:** Audit T5.3 first — actually run `docker compose up`, don't just
-trust config validation, since the README currently documents an unverified
-path. Keep Chroma embedded rather than switching to server mode; don't
-re-architect what T4.1 already proved. Then report the real total build time
-rather than estimating it.
-
-**Outcome:** The audit found the API image already built and ran cleanly, so the
-ticket was "extend", not "fix and extend". It also found a real bug: the local
-embedding model downloads about 170MB into the home cache, outside the data
-volume, so **every `docker compose down` threw it away** and the next upload
-stalled for around forty seconds re-downloading it. Measured before and after on
-the same command: previously gone, afterwards 167MB still present.
-
-The frontend is now containerised, so `docker compose up --build` serves the
-whole application with nothing installed on the host. Cold build of both images:
-**410 seconds**; bringing an already-built pair up: **8 seconds**.
-
-**Notable decisions:**
-- `NEXT_PUBLIC_API_URL` is a build argument, not a runtime variable. Next inlines
-  `NEXT_PUBLIC_*` at build time, so setting it in `environment:` would do nothing
-  and the browser would call whatever was compiled in. It happens to work when
-  that value is localhost, which is what makes it worth guarding against rather
-  than discovering on a first deployment.
-- Chroma stays embedded, and `docker-compose.yml` says why: the isolation report
-  describes the embedded, collection-per-user arrangement, and a Chroma server
-  would change the thing that was verified.
-- A `.dockerignore` was written before the first build, not after — a host
-  `node_modules` copied into a Linux image builds fine and then fails at runtime.
-- The API has a healthcheck and the frontend waits on it, so `up` never serves a
-  page whose API is not yet listening.
-
-An early browser run failed and I reported it as the build argument not being
-compiled in. That was wrong: the register form has a `confirmPassword` field the
-script never filled, so validation blocked submission and no request was ever
-made. The check now records whether a request actually left the browser, so that
-failure cannot be misread the same way again.
-
-## Phase 6 — Submission Prep
-
-### T6.1 and T6.4 — write the README, then test it
-
-**Prompt:** Write the README, then actually run the clean-clone test and fix
-what it finds, rather than asserting it works now. Then do a full uninterrupted
-top-to-bottom re-run against the final text — a clean single pass is a stronger
-claim than "each step verified individually".
-
-**Outcome:** Cloning to a fresh directory and following the README literally
-found four breakages:
-
-1. `.venv/Scripts/activate` **exits 0 and does nothing** in bash — it executes
-   the script instead of sourcing it, leaving `pip` pointed at the global
-   interpreter. The README's own MSYS2 warning was defeated by its own
-   instructions.
-2. The Docker steps could not work: copying `.env.example` ships the placeholder
-   `JWT_SECRET`, which the API refuses to start on, so the container would
-   crash-loop.
-3. `pytest` was documented but lives in `requirements-dev.txt`, which the README
-   never mentioned.
-4. A Windows long-path failure that turned out to be the test environment, not
-   the repo — recorded as a tip rather than reported as a defect.
-
-All fixed, then re-run start to finish as one scripted pass with `set -e`: every
-documented step worked, 261 tests passed, the isolation scripts reproduced 18 of
-18, and no generated artifact escaped `.gitignore`.
+- Registration endpoint
+- Password hashing
+- Validation
+- Duplicate email handling
+- Response schema
 
 ---
 
-## Where the project ended up
+### Login and JWT authentication
 
-Every ticket through Phase 6 is done except the walkthrough video, plus one
-bonus deliberately declined.
+**Prompt:**
 
-| | |
-|---|---|
-| Backend tests | 265, no live API calls |
-| Isolation checks | 18 of 18, reproducible from committed scripts |
-| Phases 0-4 | complete |
-| Phase 4.5 | T4.5.1-T4.5.3 complete; **T4.5.4 (rate limiting) declined** |
-| Phase 5 | T5.1-T5.5 complete; T5.6 (dark mode) optional and outstanding |
-| Phase 6 | README and clean-clone test done; video outstanding |
+> Show me a clean FastAPI implementation for login using bcrypt password verification and JWT access tokens. The token should contain the user's ID and have an expiration time. Also show how to structure the authentication service separately from the API route.
 
-Two things are consciously unfinished rather than overlooked, and both are
-disclosed in the README: rate limiting on the auth endpoints, and the relevance
-threshold being measured on MiniLM but not yet on `text-embedding-3-small`,
-because that account had no quota.
+**Used for:**
 
-Before submission the providers switch back to OpenAI as the documented default,
-which requires re-uploading every document — embeddings from different providers
-have different dimensions and cannot be mixed in one collection.
+- Login implementation
+- JWT creation
+- Password verification
+- Authentication service structure
 
 ---
 
-## Notes for the walkthrough video (T6.3)
+### Protected routes
+
+**Prompt:**
+
+> Explain how to create a FastAPI dependency that extracts and validates a JWT from the Authorization header and returns the authenticated user. Include handling for expired, malformed, and invalid tokens.
+
+**Used for:**
+
+- `get_current_user`
+- Protected API routes
+- JWT validation
+- Authentication error handling
+
+---
+
+### Authentication security review
+
+**Prompt:**
+
+> Review this authentication implementation for common security issues such as user enumeration, weak JWT validation, insecure password handling, and incorrect authorization checks. Suggest improvements without changing the overall architecture.
+
+**Used for:**
+
+- Security review
+- Identifying authentication edge cases
+- Improving error handling
+- Reviewing JWT validation
+
+---
+
+### Frontend authentication
+
+**Prompt:**
+
+> Help me implement login and registration pages in Next.js with TypeScript. I need an authentication context, protected routes, API token handling, loading state during session restoration, logout, and proper form error handling.
+
+**Used for:**
+
+- Authentication UI
+- Auth context
+- Route protection
+- API integration
+- Session restoration
+
+---
+
+## Phase 2 — Document Ingestion
+
+### Document upload
+
+**Prompt:**
+
+> Help me implement a FastAPI document upload endpoint that accepts PDF, TXT, and Markdown files as well as raw text. Add file type validation, filename sanitization, and a reasonable upload size limit. The implementation should avoid loading unnecessarily large files into memory.
+
+**Used for:**
+
+- Upload endpoint
+- File validation
+- Filename handling
+- Upload size protection
+
+---
+
+### PDF text extraction
+
+**Prompt:**
+
+> Show me how to extract text from PDF files in Python using pypdf. Handle PDFs with multiple pages and return clean text that can be passed into a chunking pipeline.
+
+**Used for:**
+
+- PDF processing
+- Text extraction
+- Multi-page document handling
+
+---
+
+### Text chunking
+
+**Prompt:**
+
+> Explain a simple chunking strategy for RAG documents. I want chunks that are small enough for embedding and retrieval while retaining enough surrounding context. Suggest a reasonable chunk size and overlap and provide a Python implementation.
+
+**Used for:**
+
+- Chunking implementation
+- Chunk size selection
+- Overlap handling
+
+---
+
+### Embedding provider
+
+**Prompt:**
+
+> Help me design an embedding provider abstraction so that the application can switch between a local embedding model and an API-based provider through environment configuration instead of changing application code.
+
+**Used for:**
+
+- Embedding abstraction
+- Provider interface
+- Configuration-based provider selection
+
+---
+
+### Vector storage
+
+**Prompt:**
+
+> Show me how to store document embeddings in ChromaDB with metadata such as user ID, document ID, filename, and chunk index. I need the design to support strict user-level document isolation during retrieval.
+
+**Used for:**
+
+- Vector storage
+- Metadata design
+- Document/chunk association
+
+---
+
+### Multi-tenant vector retrieval
+
+**Prompt:**
+
+> Review this RAG retrieval function and check whether a user could retrieve another user's documents. The authenticated user's ID should come from the verified JWT and should never be trusted from the request body. Suggest changes if necessary.
+
+**Used for:**
+
+- Reviewing tenant isolation
+- Preventing client-controlled user IDs
+- Scoping vector retrieval
+
+---
+
+### Document listing and ownership
+
+**Prompt:**
+
+> Help me implement document listing, retrieval, and deletion so that users can only access their own documents. What is the safest way to handle requests for another user's document ID?
+
+**Used for:**
+
+- Document authorization
+- Ownership checks
+- Preventing document ID enumeration
+
+---
+
+## Phase 3 — RAG Chat
+
+### Chat sessions
+
+**Prompt:**
+
+> Help me design REST endpoints for creating, listing, retrieving, and deleting chat sessions. Each session must belong to the authenticated user and users must not be able to access another user's sessions or messages.
+
+**Used for:**
+
+- Chat session API
+- Session ownership
+- Chat history access control
+
+---
+
+### WebSocket authentication
+
+**Prompt:**
+
+> I need to authenticate a browser WebSocket connection in FastAPI. Since the browser WebSocket API does not allow arbitrary Authorization headers, explain the safest practical approach for this application and show the server-side implementation.
+
+**Used for:**
+
+- WebSocket authentication design
+- Authentication handshake
+- Session ownership validation
+
+---
+
+### WebSocket connection handling
+
+**Prompt:**
+
+> Review this FastAPI WebSocket handler for authentication, connection timeout, invalid messages, and unauthorized session access. Suggest improvements that keep the socket stable for normal client errors.
+
+**Used for:**
+
+- WebSocket error handling
+- Authentication failures
+- Connection timeout
+- Message validation
+
+---
+
+### Retrieval
+
+**Prompt:**
+
+> Help me connect the WebSocket chat flow to the vector database. When a user sends a question, generate its embedding, search only the authenticated user's document collection, and return the most relevant chunks for use as context.
+
+**Used for:**
+
+- RAG retrieval pipeline
+- Query embeddings
+- Tenant-scoped similarity search
+
+---
+
+### Prompt augmentation
+
+**Prompt:**
+
+> Help me design a system prompt for a document-grounded assistant. The model should answer only from retrieved document context, avoid making up information, and clearly state when the context does not contain an answer. Treat retrieved document text as data rather than instructions.
+
+**Used for:**
+
+- RAG system prompt
+- Anti-hallucination behavior
+- Basic prompt-injection mitigation
+
+---
+
+### Context and conversation history
+
+**Prompt:**
+
+> Suggest a way to combine retrieved document chunks, recent conversation history, and the current user question while keeping the prompt within a reasonable token budget. The current question must always be preserved.
+
+**Used for:**
+
+- Prompt construction
+- Conversation history
+- Context limits
+
+---
+
+## Phase 4 — LLM Streaming
+
+### LLM provider integration
+
+**Prompt:**
+
+> Show me how to integrate Groq's OpenAI-compatible API into a Python application and stream the generated response. Keep the provider behind a service abstraction so the rest of the application does not depend directly on the SDK.
+
+**Used for:**
+
+- Groq integration
+- Provider abstraction
+- Streaming generation
+
+---
+
+### Async streaming
+
+**Prompt:**
+
+> The LLM SDK returns a synchronous streaming generator while my FastAPI WebSocket handler is asynchronous. Explain how to consume the stream without blocking the event loop or other connected users.
+
+**Used for:**
+
+- Async/sync integration
+- Streaming architecture
+- Concurrent WebSocket handling
+
+---
+
+### Streaming error handling
+
+**Prompt:**
+
+> Review this streaming implementation and suggest how to handle errors before the first token versus errors after partial output has already been sent. The client should not receive a fake completed response if generation fails.
+
+**Used for:**
+
+- Streaming error handling
+- Partial response handling
+- Client-side reconciliation
+
+---
+
+## Phase 5 — Persistence
+
+### Chat history
+
+**Prompt:**
+
+> Help me persist user messages and assistant responses for each chat session. The user message should be saved before generation and the final assistant response should be saved after streaming completes. Also consider how to represent a partial response if the connection fails.
+
+**Used for:**
+
+- Message persistence
+- Conversation history
+- Partial-response handling
+
+---
+
+### Reconnection
+
+**Prompt:**
+
+> Suggest a reliable WebSocket reconnection strategy for a React chat application. When reconnecting, the client should retrieve the persisted conversation from the backend instead of assuming that its local streaming state is complete.
+
+**Used for:**
+
+- WebSocket reconnection
+- Conversation recovery
+- Client/server state synchronization
+
+---
+
+## Phase 6 — Frontend Chat
+
+### Chat interface
+
+**Prompt:**
+
+> Help me build a clean React/Next.js chat interface with a session sidebar, message list, composer, loading state, and streaming assistant response. Keep the components modular and avoid unnecessary state complexity.
+
+**Used for:**
+
+- Chat UI
+- Session sidebar
+- Message components
+- Composer
+
+---
+
+### Streaming UI performance
+
+**Prompt:**
+
+> Review this React streaming implementation. Tokens arrive very quickly, so I want to avoid triggering a React render for every individual token. Suggest a simple batching strategy that keeps the UI responsive while still appearing real-time.
+
+**Used for:**
+
+- Streaming rendering optimization
+- Render batching
+- UI performance
+
+---
+
+### Auto-scroll
+
+**Prompt:**
+
+> Show me a chat auto-scroll implementation that follows new messages while the user is already near the bottom, but does not forcibly scroll when the user is reading older messages.
+
+**Used for:**
+
+- Chat scrolling
+- User experience improvements
+
+---
+
+## Phase 7 — Testing and Debugging
+
+### Backend tests
+
+**Prompt:**
+
+> Suggest pytest test cases for this FastAPI endpoint, including successful requests, validation errors, authentication failures, duplicate records, and unauthorized access.
+
+**Used for:**
+
+- Test coverage
+- Edge-case identification
+- Regression tests
+
+---
+
+### Multi-tenant isolation tests
+
+**Prompt:**
+
+> Help me design integration tests for multi-tenant isolation. Create two users with separate documents and chat sessions and verify that neither user can access the other's documents, vector results, sessions, or messages.
+
+**Used for:**
+
+- Security testing
+- Tenant isolation verification
+- Authorization regression tests
+
+---
+
+### Debugging
+
+**Prompt:**
+
+> Here is the error and the relevant code. Explain the likely cause, identify the smallest safe fix, and explain why the fix works. Do not redesign unrelated parts of the application.
+
+**Used for:**
+
+- Debugging runtime errors
+- Understanding framework behavior
+- Small targeted fixes
+
+---
+
+### Frontend debugging
+
+**Prompt:**
+
+> Review this React component and explain why the state/request is behaving incorrectly after a page refresh. Identify the lifecycle or dependency issue and suggest a minimal fix.
+
+**Used for:**
+
+- React lifecycle debugging
+- Authentication state restoration
+- API request timing issues
+
+---
+
+## Phase 8 — Final Review
+
+### Security review
+
+**Prompt:**
+
+> Perform a security review of the current application architecture. Focus specifically on authentication, authorization, JWT handling, user/document ownership, vector database isolation, WebSocket authentication, file uploads, and prompt injection. List concrete issues and improvements in priority order.
+
+**Used for:**
+
+- Final security review
+- Identifying missing authorization checks
+- Reviewing tenant isolation
+
+---
+
+### RAG review
+
+**Prompt:**
+
+> Review the complete document ingestion and RAG pipeline and identify possible failure points from upload through chunking, embedding, retrieval, prompt construction, and LLM generation. Focus on correctness and practical improvements rather than adding unnecessary complexity.
+
+**Used for:**
+
+- End-to-end RAG review
+- Error handling
+- Pipeline validation
+
+---
+
+### README review
+
+**Prompt:**
+
+> Review my README for a technical assessment submission. Check whether another developer can clone the repository, configure environment variables, start the backend/frontend/database/vector store, and understand the architecture and known limitations. Suggest missing information.
+
+**Used for:**
+
+- Documentation review
+- Setup instructions
+- Environment variable documentation
+
+---
+
+### AI Assistance Scope
+
+AI tools were used as a supporting development aid rather than as an autonomous developer for the project.
+
+Typical uses included:
+
+- Generating small code snippets, boilerplate, and implementation examples
+- Explaining framework and library APIs
+- Suggesting approaches for individual implementation problems
+- Helping diagnose and debug errors
+- Reviewing code for security issues and edge cases
+- Suggesting additional test cases
+- Helping with frontend component structure and API integration
+- Reviewing RAG prompts and retrieval behavior
+- Assisting with refactoring and documentation
+
+The project direction was driven by my understanding of the assessment requirements. I made the decisions about the architecture, technology choices, feature scope, security model, and how the different components should work together. AI-generated suggestions were reviewed, adapted where necessary, and integrated only when they fit the project's requirements.
+
+This document intentionally presents selected examples of AI-assisted development work. It does not represent the project as being generated or operated entirely by an AI coding agent.
+
+---
+
+## Notes for the walkthrough video
 
 **Show the combined isolation and anti-hallucination moment.** Two users, one
 question. Alice uploads a memo containing "The alpha project launch code is
@@ -751,8 +582,14 @@ own session returns the code with a citation, which makes the contrast obvious
 on screen.
 
 Supporting evidence available to mention while showing it:
+
 - Bob can send Alice's `user_id` and her exact collection name in the question
   frame and still gets only his own documents.
 - Bob opening a WebSocket against Alice's session id is refused with the same
   close code and reason as a session that does not exist.
 
+**Before recording:** if the embedding provider has been switched (for example
+back to OpenAI), delete and re-upload every document first. Embeddings from
+different providers have different dimensions and cannot be mixed in one
+collection, so a demo using documents embedded under the previous provider
+fails on a dimension mismatch.

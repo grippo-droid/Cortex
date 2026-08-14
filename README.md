@@ -52,7 +52,7 @@ change rather than a code change. See [Providers](#providers).
 ```
 backend/            FastAPI application
 frontend/           Next.js application
-docs/               PRD, architecture, security, frontend spec, ticket list
+docs/               Isolation test report
 docs/isolation/     Scripts that produce the isolation test report
 docs/measurements/  Script that sets the retrieval relevance threshold
 ```
@@ -564,9 +564,10 @@ table polled by a worker) so ingestion survives restarts and can be retried.
 
 ## Documentation
 
-- [Product requirements](docs/01_PRD.md)
-- [Technical architecture](docs/02_Technical_Architecture.md)
-- [Security and access](docs/03_Security_and_Access.md)
-- [Frontend spec](docs/04_Frontend_Spec.md)
-- [Feature ticket list](docs/05_Feature_Ticket_List.md)
-- [Isolation test report](docs/06_Isolation_Test_Report.md)
+- [Isolation test report](docs/06_Isolation_Test_Report.md) — the live
+  two-user test of the multi-tenant boundary, 18 of 18 checks
+- [Isolation test scripts](docs/isolation/) — reproduce that report against a
+  running server
+- [Relevance measurement](docs/measurements/measure_distances.py) — the distance
+  data behind `RETRIEVAL_MAX_DISTANCE`
+- [Prompts log](PROMPTS.md) — record of AI-assisted development

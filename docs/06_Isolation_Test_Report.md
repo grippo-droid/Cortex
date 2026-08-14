@@ -3,7 +3,7 @@
 Multi-tenant isolation is the constraint this project is judged on: **a user must
 never be able to access or query another user's documents or chat history.** This
 report records a live test of that boundary, including attacks beyond the ones
-the security document lists.
+the assessment's security requirements list.
 
 Every check below was produced by one of the two scripts in `docs/isolation/`,
 run against a live server. The quoted statuses, bodies and model answers are
@@ -54,11 +54,16 @@ would be an unambiguous leak.
 
 ---
 
-## The five checks required by the security document
+## The five required isolation checks
 
-The security document asks for five things. They are checks 1, 2, 3, 5 and 7
-below. Checks 4, 6 and 8 are controls added alongside them, for reasons given in
-each case.
+The assessment requires five things of the isolation boundary, restated here so
+this report stands on its own: two separate accounts exist; one user's document
+list excludes the other's; reading another user's document by id is refused;
+opening another user's chat socket is refused; and a question only the other
+user's documents could answer returns nothing of theirs.
+
+They are checks 1, 2, 3, 5 and 7 below. Checks 4, 6 and 8 are controls added
+alongside them, for reasons given in each case.
 
 ### 1. Two separate accounts exist
 
@@ -134,8 +139,8 @@ tenant boundary. **PASS**
 
 ## Additional attacks
 
-The security document asks that isolation hold *"even if I guess or manipulate
-IDs"*, which implies more than the five checks above.
+The requirement is that isolation holds *"even if I guess or manipulate IDs"*,
+which implies more than the five checks above.
 
 ### 9. Smuggling A's user id and collection name into the question frame
 

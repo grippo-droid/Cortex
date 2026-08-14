@@ -1,8 +1,8 @@
 """SQLAlchemy ORM models.
 
-Mirrors the data model in docs/02_Technical_Architecture.md section 4. Indexes on
-the isolation-critical foreign keys and ON DELETE CASCADE are included here up
-front (Architecture section 7.2 / ticket T4.5.1) — cheap now, a migration later.
+Indexes on the isolation-critical foreign keys and ON DELETE CASCADE are
+included here up front rather than retrofitted — cheap now, a migration later.
+The cascade is verified end to end by check 17 in the isolation test report.
 """
 
 from datetime import datetime, timezone
