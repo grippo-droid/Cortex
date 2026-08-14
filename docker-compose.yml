@@ -1,6 +1,10 @@
-# Phase 0 skeleton: the API plus persistent volumes for SQLite and Chroma.
-# Chroma runs embedded inside the API process (Architecture section 5); a separate
-# chroma service and the frontend container are the T5.3 upgrade.
+# Full local spin-up: the API and the web frontend.
+#
+# Chroma runs embedded inside the API process (Architecture section 5) rather
+# than as its own service. That is deliberate and not a shortcut: the isolation
+# guarantees verified in docs/06_Isolation_Test_Report.md describe the embedded,
+# collection-per-user arrangement, and moving to a Chroma server would change
+# the thing that was tested.
 
 services:
   api:
@@ -10,12 +14,42 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      # Point storage at the mounted volumes rather than the container's workdir.
+      # Point storage at the mounted volume rather than the container's
+      # writable layer, which is discarded when the container is recreated.
       DATABASE_URL: sqlite:////data/cortex.db
       CHROMA_PERSIST_DIR: /data/chroma
     volumes:
       - cortex-data:/data
+      # EMBEDDING_PROVIDER=local downloads about 170MB of ONNX model on first
+      # use, into the home cache rather than into /data. Without this volume
+      # every `docker compose down` throws it away and the next upload stalls
+      # while it downloads again.
+      - cortex-model-cache:/root/.cache/chroma
+    healthcheck:
+      # Used by `web` below: a frontend served before the API is listening shows
+      # the user a broken app for the first few seconds.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        # Compiled into the browser bundle at build time, so it must be the URL
+        # the browser can reach, not the compose service name. See the comment
+        # in frontend/Dockerfile.
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
   cortex-data:
+  cortex-model-cache:

@@ -1,0 +1,20 @@
+# Host node_modules holds platform-specific binaries. Copying a Windows or macOS
+# tree into a Linux image produces one that builds and then fails at runtime, so
+# dependencies are always installed inside the image.
+node_modules/
+.next/
+out/
+
+# Local secrets and state never belong in a build context.
+.env.local
+.env*.local
+
+.git/
+.gitignore
+README.md
+npm-debug.log*
+
+# Written by `next dev`, not part of the application.
+AGENTS.md
+CLAUDE.md
+tsconfig.tsbuildinfo

@@ -132,8 +132,34 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 docker compose up --build              # API on http://localhost:8000
 ```
 
-Compose currently runs the API with persistent volumes for SQLite and Chroma.
-The frontend is not yet containerised; run it with `npm run dev` as above.
+That brings up the whole application — API on
+[localhost:8000](http://localhost:8000) and the web interface on
+[localhost:3000](http://localhost:3000). Nothing else needs installing: no
+Python, no Node, no virtualenv. The first build takes several minutes, mostly
+installing ChromaDB and compiling the frontend; later builds reuse the cached
+layers.
+
+The frontend waits for the API's healthcheck before starting, so `up` does not
+briefly serve a page whose API is not listening yet.
+
+**State lives in named volumes**, so `docker compose down` and `up` again keeps
+your account, documents and chats. `docker compose down -v` deletes them, which
+is the clean slate to use before running the isolation scripts.
+
+A second volume caches the local embedding model. With
+`EMBEDDING_PROVIDER=local` the first upload downloads about 170MB of ONNX model,
+and without that volume every recreated container would download it again.
+
+**The API URL is compiled into the frontend at build time.** `NEXT_PUBLIC_*`
+values are inlined by Next during `npm run build`, so setting one at runtime has
+no effect. Compose passes it as a build argument, defaulting to
+`http://localhost:8000` — the address the *browser* uses, not the compose
+service name. Serving this anywhere other than localhost means rebuilding the
+web image with the right value:
+
+```bash
+docker compose build --build-arg NEXT_PUBLIC_API_URL=https://api.example.com web
+```
 
 ## Configuration
 

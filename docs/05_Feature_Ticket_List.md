@@ -61,7 +61,12 @@ single focused prompt/session.
       a bad upload still fails loudly; only chunk/embed/vector-write moved. Adds
       an `error` column so a background failure is debuggable rather than a bare
       FAILED badge, and polling on the dashboard so the status actually settles.
-- [ ] T5.3 docker-compose full spin-up (app + db + chroma if server mode)
+- [x] T5.3 docker-compose full spin-up (app + db + chroma if server mode) — API
+      and frontend both containerised, `docker compose up --build` serves the
+      whole application with no host toolchain. Chroma stays **embedded**
+      deliberately: the isolation report describes the embedded,
+      collection-per-user arrangement, and a Chroma server would change the
+      thing that was verified.
 - [x] T5.4 Frontend: optimistic send — the optimistic append existed from T3.7;
       what was missing was the reconciliation half, so a question that was never
       delivered looked identical to one that was. Now pending until the server
