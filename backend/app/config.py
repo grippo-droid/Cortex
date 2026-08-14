@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     embedding_retry_base_seconds: float = 0.5
 
     # Storage
-    database_url: str = "sqlite:///./cortex.db"
+    database_url: str = "sqlite:///./documind.db"
     chroma_persist_dir: str = "./chroma_data"
 
     # Uploads

@@ -13,7 +13,7 @@ type Mode = "login" | "register";
 
 const COPY = {
   login: {
-    heading: "Sign in to Cortex",
+    heading: "Sign in to DocuMind",
     submit: "Sign in",
     pending: "Signing in...",
     switchPrompt: "Need an account?",

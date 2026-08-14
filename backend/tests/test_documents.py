@@ -9,7 +9,7 @@ from app.config import settings
 from app.models import Document
 from tests.conftest import register
 
-SAMPLE = "Cortex keeps each tenant's documents apart. " * 40
+SAMPLE = "DocuMind keeps each tenant's documents apart. " * 40
 
 
 def upload_file(client, headers, filename, content: bytes):

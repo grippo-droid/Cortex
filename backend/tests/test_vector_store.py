@@ -35,11 +35,11 @@ def upload_file(client, headers, filename, content: bytes):
 
 
 def test_collection_name_is_derived_from_the_user_id():
-    assert vector_store.collection_name_for_user(7) == "cortex_user_7"
+    assert vector_store.collection_name_for_user(7) == "documind_user_7"
     assert vector_store.collection_name_for_user(1) != vector_store.collection_name_for_user(2)
 
 
-@pytest.mark.parametrize("bad", ["7", "cortex_user_1", "../escape", None, True, 1.5])
+@pytest.mark.parametrize("bad", ["7", "documind_user_1", "../escape", None, True, 1.5])
 def test_collection_name_rejects_non_integer_ids(bad):
     """A string here would let a caller address an arbitrary collection."""
     with pytest.raises(TypeError):

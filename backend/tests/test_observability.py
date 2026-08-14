@@ -1,7 +1,7 @@
 """Structured request logging (ticket T4.5.3).
 
 `configure_logging` replaces the root handlers at startup, which would discard
-pytest's own `caplog` handler, so these tests capture on the `cortex.request`
+pytest's own `caplog` handler, so these tests capture on the `documind.request`
 logger directly instead.
 """
 
@@ -57,7 +57,7 @@ def wait_for_websocket_entry(handler, timeout: float = 3.0) -> dict:
 @pytest.fixture
 def logs():
     handler = _CaptureHandler()
-    logger = logging.getLogger("cortex.request")
+    logger = logging.getLogger("documind.request")
     logger.addHandler(handler)
     previous_level = logger.level
     logger.setLevel(logging.INFO)
@@ -182,7 +182,7 @@ def test_authenticated_websocket_records_the_user(client, logs):
 
 def test_formatter_emits_extra_fields_and_omits_internals():
     record = logging.LogRecord(
-        "cortex.request", logging.INFO, __file__, 1, "hello", (), None
+        "documind.request", logging.INFO, __file__, 1, "hello", (), None
     )
     record.user_id = 7
     record.duration_ms = 12.5
@@ -201,7 +201,7 @@ def test_formatter_includes_the_request_id_from_context():
     token = request_id_var.set("ctx-999")
     try:
         record = logging.LogRecord(
-            "cortex.request", logging.INFO, __file__, 1, "hi", (), None
+            "documind.request", logging.INFO, __file__, 1, "hi", (), None
         )
         payload = json.loads(JsonFormatter().format(record))
     finally:
@@ -213,7 +213,7 @@ def test_formatter_includes_the_request_id_from_context():
 def test_formatter_survives_unserialisable_values():
     """A stray object must not turn a log line into a crash."""
     record = logging.LogRecord(
-        "cortex.request", logging.INFO, __file__, 1, "hi", (), None
+        "documind.request", logging.INFO, __file__, 1, "hi", (), None
     )
     record.thing = object()
 

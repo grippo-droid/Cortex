@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Cortex",
+  title: "DocuMind",
   description: "Chat with your own documents.",
 };
 

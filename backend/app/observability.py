@@ -41,7 +41,7 @@ _STANDARD_ATTRS = set(
     logging.LogRecord("", 0, "", 0, "", (), None).__dict__
 ) | {"message", "asctime", "taskName"}
 
-logger = logging.getLogger("cortex.request")
+logger = logging.getLogger("documind.request")
 
 
 class JsonFormatter(logging.Formatter):

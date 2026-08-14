@@ -1,4 +1,4 @@
-# Technical Architecture — Cortex
+# Technical Architecture — DocuMind
 
 ## 1. Stack
 - **Backend:** Python 3.10+, FastAPI, Uvicorn

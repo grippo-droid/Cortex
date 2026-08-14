@@ -3,7 +3,7 @@
 The DATABASE_URL and CHROMA_PERSIST_DIR overrides have to happen before anything
 imports `app.config`, because Settings is instantiated at import time and
 cached. Environment variables take precedence over the .env file, so this keeps
-tests off the developer's real cortex.db and chroma_data.
+tests off the developer's real documind.db and chroma_data.
 """
 
 import hashlib
@@ -11,7 +11,7 @@ import os
 import tempfile
 from pathlib import Path
 
-_TEST_ROOT = Path(tempfile.mkdtemp(prefix="cortex-tests-"))
+_TEST_ROOT = Path(tempfile.mkdtemp(prefix="documind-tests-"))
 os.environ["DATABASE_URL"] = f"sqlite:///{(_TEST_ROOT / 'test.db').as_posix()}"
 os.environ["CHROMA_PERSIST_DIR"] = str(_TEST_ROOT / "chroma")
 os.environ.setdefault("JWT_SECRET", "test-secret-not-used-in-production")

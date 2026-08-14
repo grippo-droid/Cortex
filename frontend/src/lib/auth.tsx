@@ -25,7 +25,7 @@ import {
 import { apiFetch, configureApiAuth } from "@/lib/api";
 import type { AuthResponse, UserRead } from "@/types";
 
-const TOKEN_STORAGE_KEY = "cortex.token";
+const TOKEN_STORAGE_KEY = "documind.token";
 
 function readStoredToken(): string | null {
   if (typeof window === "undefined") {

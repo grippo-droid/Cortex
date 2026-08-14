@@ -1,4 +1,4 @@
-# Cortex
+# DocuMind
 
 A multi-tenant, AI-powered document assistant. Users upload their own documents
 and chat with an assistant that answers strictly from those documents (RAG),
@@ -176,7 +176,7 @@ annotated template.
 | `JWT_EXPIRE_MINUTES` | no | `1440` | 24 hours |
 | `MAX_UPLOAD_MB` | no | `10` | Per file |
 | `RETRIEVAL_MAX_DISTANCE` | no | `0.75` | Relevance cutoff; `0` disables |
-| `DATABASE_URL` | no | `sqlite:///./cortex.db` | |
+| `DATABASE_URL` | no | `sqlite:///./documind.db` | |
 | `CHROMA_PERSIST_DIR` | no | `./chroma_data` | |
 | `CORS_ORIGINS` | no | `http://localhost:3000` | Comma-separated |
 
@@ -241,7 +241,7 @@ The design choices that make this hold:
 - **The user id enters the system in exactly one place.** `get_current_user`
   for HTTP and `authenticate_websocket` for the socket both derive it from a
   verified token. No route reads an owner from a path, query string, or body.
-- **One vector collection per user**, named `cortex_user_{id}`, rather than a
+- **One vector collection per user**, named `documind_user_{id}`, rather than a
   shared collection filtered by metadata. A forgotten filter in a pooled design
   exposes every tenant; here the worst case is addressing a collection that does
   not exist. The name is always derived from the verified id and never accepted
@@ -275,7 +275,7 @@ node docs/isolation/isolation_test_deleted_user.mjs   # checks 16-18
 
 They need Node 22 or newer, for the global `WebSocket`, and no packages. Each
 prints one line per check, exits non-zero if any fails, and writes its full
-evidence to a JSON file. Start from an empty `cortex.db` and `chroma_data` so
+evidence to a JSON file. Start from an empty `documind.db` and `chroma_data` so
 the two users are issued low ids and the id-guessing checks probe values that
 genuinely belong to someone else.
 
@@ -472,7 +472,7 @@ those past Windows' 260-character path limit, and `pip install` then fails part
 way through with `OSError: [Errno 2] No such file or directory` naming a long
 `onnxruntime` path.
 
-Cloning somewhere short, such as `C:\dev\Cortex`, avoids it entirely.
+Cloning somewhere short, such as `C:\dev\DocuMind`, avoids it entirely.
 Alternatively enable long-path support (`git config --system core.longpaths true`
 and the `LongPathsEnabled` registry setting).
 
@@ -490,7 +490,7 @@ the driver) and Postgres enforces the constraints natively.
 
 ### Token storage (localStorage)
 
-The frontend stores its JWT in `localStorage` under `cortex.token`. **Any script
+The frontend stores its JWT in `localStorage` under `documind.token`. **Any script
 running on the page can read it**, so a cross-site scripting bug would leak an
 active session token.
 

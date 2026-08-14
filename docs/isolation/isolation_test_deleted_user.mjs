@@ -10,8 +10,8 @@
  *
  *   node docs/isolation/isolation_test_deleted_user.mjs
  *
- * Paths are resolved relative to this file. Override with CORTEX_API,
- * CORTEX_WS, CORTEX_DB or CORTEX_PYTHON if your layout differs.
+ * Paths are resolved relative to this file. Override with DOCUMIND_API,
+ * DOCUMIND_WS, DOCUMIND_DB or DOCUMIND_PYTHON if your layout differs.
  */
 
 import { execFileSync } from "node:child_process";
@@ -19,19 +19,19 @@ import { existsSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-const API = process.env.CORTEX_API ?? "http://127.0.0.1:8000";
-const WS = process.env.CORTEX_WS ?? "ws://127.0.0.1:8000";
+const API = process.env.DOCUMIND_API ?? "http://127.0.0.1:8000";
+const WS = process.env.DOCUMIND_WS ?? "ws://127.0.0.1:8000";
 
 // docs/isolation/<this file> -> repository root
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "..", "..");
 const BACKEND = path.join(ROOT, "backend");
 
-const DB = process.env.CORTEX_DB ?? path.join(BACKEND, "cortex.db");
+const DB = process.env.DOCUMIND_DB ?? path.join(BACKEND, "documind.db");
 
 /** The backend virtualenv if present, otherwise whatever python is on PATH. */
 function resolvePython() {
-  if (process.env.CORTEX_PYTHON) return process.env.CORTEX_PYTHON;
+  if (process.env.DOCUMIND_PYTHON) return process.env.DOCUMIND_PYTHON;
   const candidates = [
     path.join(BACKEND, ".venv", "Scripts", "python.exe"), // Windows
     path.join(BACKEND, ".venv", "bin", "python"),          // macOS / Linux
@@ -42,7 +42,7 @@ function resolvePython() {
 const PYTHON = resolvePython();
 
 if (!existsSync(DB)) {
-  console.error(`database not found at ${DB} — set CORTEX_DB to its location`);
+  console.error(`database not found at ${DB} — set DOCUMIND_DB to its location`);
   process.exit(1);
 }
 

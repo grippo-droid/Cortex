@@ -13,7 +13,7 @@ _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # login path as on a real one. Without it, a missing account answers in about a
 # millisecond and a real account in a few hundred, which tells an attacker which
 # email addresses are registered.
-DUMMY_PASSWORD_HASH = _pwd_context.hash("cortex-timing-equalisation-placeholder")
+DUMMY_PASSWORD_HASH = _pwd_context.hash("documind-timing-equalisation-placeholder")
 
 
 def hash_password(password: str) -> str:

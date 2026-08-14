@@ -143,7 +143,7 @@ def test_a_smuggled_user_id_in_the_frame_is_ignored(client):
             socket,
             "What is the launch code?",
             user_id=alice["user"]["id"],
-            collection=f"cortex_user_{alice['user']['id']}",
+            collection=f"documind_user_{alice['user']['id']}",
         )
 
     assert frame["chunks"] == []

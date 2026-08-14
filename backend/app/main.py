@@ -1,4 +1,4 @@
-"""Cortex API entrypoint."""
+"""DocuMind API entrypoint."""
 
 from contextlib import asynccontextmanager
 
@@ -19,7 +19,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Cortex API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="DocuMind API", version="0.1.0", lifespan=lifespan)
 
 # Added last, so it wraps CORS and therefore sees every response, including the
 # ones CORS short-circuits.

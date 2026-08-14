@@ -1,8 +1,8 @@
 # Prompts Used
 
-**Project: Cortex**
+**Project: DocuMind**
 
-This document contains a representative record of prompts I used while developing **Cortex**. It focuses on meaningful instances where I used AI to assist with implementation, debugging, technical explanations, and code-level suggestions rather than documenting every interaction.
+This document contains a representative record of prompts I used while developing **DocuMind**. It focuses on meaningful instances where I used AI to assist with implementation, debugging, technical explanations, and code-level suggestions rather than documenting every interaction.
 
 I used AI as a development assistant for implementation-level help such as code snippets, API/framework guidance, debugging, refactoring, test ideas, and security reviews. I was responsible for understanding the assessment requirements, deciding the overall architecture and technology stack, implementing and integrating the features, and reviewing any AI-generated suggestions before using them in the project.
 

@@ -10,10 +10,10 @@
  * `@custom-variant`, so every existing `dark:` utility follows the class.
  */
 
-export const THEME_STORAGE_KEY = "cortex.theme";
+export const THEME_STORAGE_KEY = "documind.theme";
 
 /** Dispatched after a change so this tab re-reads; `storage` only fires in others. */
-export const THEME_CHANGE_EVENT = "cortex:theme-change";
+export const THEME_CHANGE_EVENT = "documind:theme-change";
 
 export type ThemePreference = "light" | "dark" | "system";
 export type ResolvedTheme = "light" | "dark";

@@ -25,7 +25,7 @@ from chromadb.errors import InvalidDimensionException
 
 from app.config import settings
 
-_COLLECTION_PREFIX = "cortex_user_"
+_COLLECTION_PREFIX = "documind_user_"
 
 # This chromadb build calls posthog's capture() with an outdated signature, so
 # every telemetry attempt raises and logs an error. The send always fails, which

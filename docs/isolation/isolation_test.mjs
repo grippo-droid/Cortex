@@ -11,14 +11,14 @@
  *
  *   node docs/isolation/isolation_test.mjs
  *
- * Override the target with CORTEX_API / CORTEX_WS if the server is not on
+ * Override the target with DOCUMIND_API / DOCUMIND_WS if the server is not on
  * 127.0.0.1:8000. Checks 16-18 live in isolation_test_deleted_user.mjs.
  */
 
 import { writeFileSync } from "node:fs";
 
-const API = process.env.CORTEX_API ?? "http://127.0.0.1:8000";
-const WS = process.env.CORTEX_WS ?? "ws://127.0.0.1:8000";
+const API = process.env.DOCUMIND_API ?? "http://127.0.0.1:8000";
+const WS = process.env.DOCUMIND_WS ?? "ws://127.0.0.1:8000";
 const stamp = Date.now();
 
 const A_EMAIL = `alice.${stamp}@example.com`;
@@ -212,10 +212,10 @@ check("8", "A asking the same question does receive it (control)",
 
 // 9. Smuggled user_id and collection name in the question frame.
 const smuggle = await socketProbe(bobSession.id, authFrame(bob.token),
-  askFrame("What is the alpha project launch code?", { user_id: alice.id, collection: `cortex_user_${alice.id}` }));
+  askFrame("What is the alpha project launch code?", { user_id: alice.id, collection: `documind_user_${alice.id}` }));
 check("9", "Smuggling A's user_id and collection name into the frame is ignored",
   !smuggle.answer.includes(A_SECRET),
-  `frame carried user_id=${alice.id} and collection="cortex_user_${alice.id}"; answer: "${smuggle.answer.replace(/\s+/g, " ").trim().slice(0, 130)}"`,
+  `frame carried user_id=${alice.id} and collection="documind_user_${alice.id}"; answer: "${smuggle.answer.replace(/\s+/g, " ").trim().slice(0, 130)}"`,
   { answer: smuggle.answer });
 
 // 10. Forged JWT signed with the placeholder secret.

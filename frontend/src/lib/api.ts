@@ -1,5 +1,5 @@
 /**
- * Thin fetch wrapper for the Cortex API.
+ * Thin fetch wrapper for the DocuMind API.
  *
  * The auth context registers a token getter and a 401 handler at mount via
  * `configureApiAuth`, so callers do not have to thread the token through by
