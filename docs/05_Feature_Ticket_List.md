@@ -52,7 +52,11 @@ single focused prompt/session.
       first; revisit only if time remains.
 
 ## Phase 5 — Bonus (time-permitting, in priority order)
-- [ ] T5.1 Anti-hallucination system prompt + refusal behavior for out-of-scope Qs
+- [x] T5.1 Anti-hallucination system prompt + refusal behavior for out-of-scope Qs
+      — the prompt was in place from T3.4; what was missing was a retrieval
+      relevance threshold, so refusing an out-of-scope question is now a code
+      path rather than a hope that the model obeys the prompt. The threshold was
+      measured, not guessed: see `measurements/measure_distances.py`.
 - [ ] T5.2 Async ingestion via BackgroundTasks
 - [ ] T5.3 docker-compose full spin-up (app + db + chroma if server mode)
 - [ ] T5.4 Frontend: optimistic send

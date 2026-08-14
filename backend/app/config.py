@@ -73,6 +73,23 @@ class Settings(BaseSettings):
     # How many chunks to retrieve per question.
     retrieval_top_k: int = 5
 
+    # Cosine distance (1 - cosine similarity) beyond which a retrieved chunk is
+    # treated as unrelated to the question and dropped. Without it, an
+    # out-of-scope question still returns the top k chunks however irrelevant,
+    # and refusing depends on the model choosing to obey the system prompt
+    # rather than on a code path.
+    #
+    # Measured on all-MiniLM-L6-v2 (docs/measurements/measure_distances.py):
+    # questions the corpus answers peaked at 0.46, related-but-unanswered
+    # questions ran 0.46-0.64, and unrelated questions started at 0.80. 0.75
+    # sits in that gap, deliberately nearer the unrelated end: a false refusal
+    # is worse than an occasional over-answer, and related-but-unanswered
+    # questions are better refused by the model, which can explain itself.
+    #
+    # Scale is embedding-model-specific. Re-measure after changing provider.
+    # Set to 0 or less to disable filtering.
+    retrieval_max_distance: float = 0.75
+
     # Prompt budgets. Characters rather than tokens, for the same reason as
     # chunking: roughly four characters per token.
     max_history_messages: int = 10

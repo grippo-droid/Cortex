@@ -128,6 +128,24 @@ def fake_embeddings():
 
 
 @pytest.fixture(autouse=True)
+def _relevance_filter_off():
+    """Disable the distance threshold for tests using the fake provider.
+
+    The fake embeddings are hash-derived, so the distance between a question and
+    a chunk is arbitrary rather than semantic. Applying a threshold tuned on a
+    real model to those numbers would filter by coincidence, which would neither
+    test the threshold nor leave the retrieval tests meaningful.
+
+    The filter is exercised directly in test_relevance.py with controlled
+    distances, and empirically by docs/measurements/measure_distances.py.
+    """
+    previous = settings.retrieval_max_distance
+    settings.retrieval_max_distance = 0.0
+    yield
+    settings.retrieval_max_distance = previous
+
+
+@pytest.fixture(autouse=True)
 def _fresh_vector_store(tmp_path_factory):
     """Point each test at its own Chroma directory.
 

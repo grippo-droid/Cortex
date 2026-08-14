@@ -16,8 +16,26 @@ class RetrievedChunk:
     distance: float | None
 
 
+def is_relevant(distance: float | None, max_distance: float) -> bool:
+    """Whether a hit is close enough to the question to be worth showing.
+
+    A missing distance is kept rather than dropped: the point of the threshold
+    is to avoid answering from unrelated text, and silently discarding a chunk
+    whose distance the store did not report would refuse for the wrong reason.
+    """
+    if max_distance <= 0:
+        return True
+    if distance is None:
+        return True
+
+    return distance <= max_distance
+
+
 def retrieve_context(
-    user_id: int, query: str, limit: int | None = None
+    user_id: int,
+    query: str,
+    limit: int | None = None,
+    max_distance: float | None = None,
 ) -> list[RetrievedChunk]:
     """Find the passages most similar to `query` among one user's documents.
 
@@ -25,6 +43,12 @@ def retrieve_context(
     which collection is searched, and no other argument can widen that: the
     collection name is derived from it inside the vector store rather than being
     passed in from anywhere.
+
+    Hits further away than the relevance threshold are dropped, so a question
+    the user's documents do not cover returns nothing and is refused by the
+    caller rather than sent to the model with irrelevant context attached.
+    Filtering is per chunk, so a partially answerable question keeps the
+    passages that do relate to it and loses the ones that do not.
     """
     cleaned = query.strip()
     if not cleaned:
@@ -32,6 +56,9 @@ def retrieve_context(
         return []
 
     top_k = settings.retrieval_top_k if limit is None else limit
+    threshold = (
+        settings.retrieval_max_distance if max_distance is None else max_distance
+    )
     query_embedding = embed_texts([cleaned])[0]
 
     hits = vector_store.query_user_chunks(user_id, query_embedding, limit=top_k)
@@ -45,4 +72,5 @@ def retrieve_context(
             distance=hit.get("distance"),
         )
         for hit in hits
+        if is_relevant(hit.get("distance"), threshold)
     ]
