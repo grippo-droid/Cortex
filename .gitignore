@@ -15,6 +15,12 @@ venv/
 *.db
 *.sqlite3
 chroma_data/
+# Archived local state, e.g. taken aside before an isolation test run
+*.bak
+*.bak/
+# Evidence files written by the isolation scripts in docs/isolation/
+isolation_results.json
+isolation_results_deleted_user.json
 
 # Node / Next.js
 node_modules/
