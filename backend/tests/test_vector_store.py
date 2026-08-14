@@ -9,6 +9,7 @@ import io
 
 import pytest
 
+from app.config import settings
 from app.services import vector_store
 from app.services.embeddings import embed_texts
 from tests.conftest import register
@@ -156,3 +157,42 @@ def test_chunk_count_matches_what_was_stored(client):
 
     assert document["chunk_count"] > 1
     assert len(hits) == document["chunk_count"]
+
+
+def test_concurrent_first_access_builds_one_client(tmp_path, monkeypatch):
+    """Two threads reaching an unbuilt client must not both construct one.
+
+    Ingestion runs in background threads, so two uploads can arrive together.
+    On a persist directory that does not exist yet, two simultaneous
+    constructions race Chroma's schema creation and one fails with
+    "no such table: tenants". `lru_cache` did not prevent this, because it does
+    not hold a lock across the call it wraps.
+    """
+    import threading
+
+    monkeypatch.setattr(settings, "chroma_persist_dir", str(tmp_path / "fresh"))
+    vector_store.reset_client_cache()
+
+    clients = []
+    errors = []
+    start = threading.Barrier(4)
+
+    def build():
+        try:
+            start.wait(timeout=10)
+            clients.append(vector_store._get_client())
+        except Exception as exc:  # noqa: BLE001 - recorded and asserted below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=build) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+
+    vector_store.reset_client_cache()
+
+    assert errors == []
+    assert len(clients) == 4
+    # Every thread must see the same instance, not one each.
+    assert all(c is clients[0] for c in clients)

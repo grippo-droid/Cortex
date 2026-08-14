@@ -15,7 +15,7 @@ Two rules hold everywhere in this module:
 """
 
 import logging
-from functools import lru_cache
+import threading
 from typing import Any
 
 import chromadb
@@ -57,13 +57,31 @@ def collection_name_for_user(user_id: int) -> str:
     return f"{_COLLECTION_PREFIX}{user_id}"
 
 
-@lru_cache(maxsize=1)
+_client: chromadb.ClientAPI | None = None
+# Ingestion runs in background threads, so two uploads can reach this at the
+# same time. `lru_cache` does not hold a lock across the call it wraps, so both
+# would construct a client, and on a persist directory that does not exist yet
+# they race Chroma's schema creation: one reads the sysdb while the other is
+# still building it and fails with "no such table: tenants". A real lock makes
+# the first construction happen exactly once.
+_client_lock = threading.Lock()
+
+
 def _get_client() -> chromadb.ClientAPI:
     # Built lazily so importing the app does not create the storage directory.
-    return chromadb.PersistentClient(
-        path=settings.chroma_persist_dir,
-        settings=ChromaSettings(anonymized_telemetry=False),
-    )
+    global _client
+
+    if _client is None:
+        with _client_lock:
+            # Checked again inside the lock: another thread may have built it
+            # while this one waited.
+            if _client is None:
+                _client = chromadb.PersistentClient(
+                    path=settings.chroma_persist_dir,
+                    settings=ChromaSettings(anonymized_telemetry=False),
+                )
+
+    return _client
 
 
 def _collection_for_user(user_id: int) -> Collection:
@@ -162,4 +180,7 @@ def delete_user_collection(user_id: int) -> None:
 
 def reset_client_cache() -> None:
     """Drop the cached client so a new persist directory takes effect."""
-    _get_client.cache_clear()
+    global _client
+
+    with _client_lock:
+        _client = None

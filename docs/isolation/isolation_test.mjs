@@ -79,6 +79,31 @@ async function uploadText(user, text) {
   return { status: response.status, json: await response.json() };
 }
 
+/**
+ * Wait for a document to finish ingesting.
+ *
+ * Ingestion runs in a background task, so the upload returns a pending document
+ * and the chunks do not exist yet. Asking a question before then retrieves
+ * nothing, which would let the isolation checks pass without ever exercising
+ * retrieval: an empty answer contains no other user's data either.
+ */
+async function waitForReady(user, documentId, timeoutMs = 120000) {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const current = await api(`/documents/${documentId}`, { token: user.token });
+    const status = current.json?.status;
+
+    if (status === "ready") return current.json;
+    if (status === "failed") {
+      throw new Error(`ingestion failed for document ${documentId}: ${current.json?.error}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+
+  throw new Error(`document ${documentId} was still not ready after ${timeoutMs}ms`);
+}
+
 /** Open the chat socket, optionally send frames, and record everything seen. */
 function socketProbe(sessionId, opening, follow = null, waitMs = 25000) {
   return new Promise((resolve) => {
@@ -144,8 +169,13 @@ console.log(`   user B: id=${bob.id} ${bob.email}`);
 
 const aliceDoc = await uploadText(alice, A_DOC);
 const bobDoc = await uploadText(bob, B_DOC);
-console.log(`   A document id=${aliceDoc.json.id} status=${aliceDoc.json.status} chunks=${aliceDoc.json.chunk_count}`);
-console.log(`   B document id=${bobDoc.json.id} status=${bobDoc.json.status} chunks=${bobDoc.json.chunk_count}`);
+
+// Both must finish ingesting before any question is asked, or retrieval has
+// nothing to find and the checks below prove nothing.
+const aliceReady = await waitForReady(alice, aliceDoc.json.id);
+const bobReady = await waitForReady(bob, bobDoc.json.id);
+console.log(`   A document id=${aliceReady.id} status=${aliceReady.status} chunks=${aliceReady.chunk_count}`);
+console.log(`   B document id=${bobReady.id} status=${bobReady.status} chunks=${bobReady.chunk_count}`);
 
 const aliceSession = (await api("/chat/sessions", { method: "POST", token: alice.token, body: {} })).json;
 const bobSession = (await api("/chat/sessions", { method: "POST", token: bob.token, body: {} })).json;
@@ -198,8 +228,11 @@ check("6", "Socket refusal is identical for a session that does not exist",
 
 // 7. B asks a question only A's document can answer.
 const bAsk = await socketProbe(bobSession.id, authFrame(bob.token), askFrame("What is the alpha project launch code?"));
+// The answer must also be non-empty: silence contains no other user's data
+// either, so accepting it would let this check pass without the request ever
+// having been served.
 check("7", "B asking a question only A's document answers gets nothing of A's",
-  !bAsk.answer.includes(A_SECRET),
+  bAsk.answer.trim().length > 0 && !bAsk.answer.includes(A_SECRET),
   `B's answer: "${bAsk.answer.replace(/\s+/g, " ").trim().slice(0, 160)}"`,
   { request: "WS question in B's own session", answer: bAsk.answer });
 
