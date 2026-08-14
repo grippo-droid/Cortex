@@ -59,7 +59,10 @@ single focused prompt/session.
       measured, not guessed: see `measurements/measure_distances.py`.
 - [ ] T5.2 Async ingestion via BackgroundTasks
 - [ ] T5.3 docker-compose full spin-up (app + db + chroma if server mode)
-- [ ] T5.4 Frontend: optimistic send
+- [x] T5.4 Frontend: optimistic send — the optimistic append existed from T3.7;
+      what was missing was the reconciliation half, so a question that was never
+      delivered looked identical to one that was. Now pending until the server
+      acknowledges it, failed with a retry control when the socket gives up.
 - [x] T5.5 Frontend: WS reconnection with backoff — **done in T3.7**. The socket
       hook's state machine is the reconnection logic, so building it without
       backoff would have meant rewriting the hook's core later.

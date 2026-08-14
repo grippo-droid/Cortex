@@ -69,7 +69,17 @@ export type ChatSocketStatus =
   | "closed"
   | "error";
 
-export type ChatMessageStatus = "complete" | "streaming" | "partial" | "failed";
+/**
+ * `pending` is an optimistic question the server has not acknowledged yet;
+ * `failed` is one the connection died before delivering, which the user can
+ * retry.
+ */
+export type ChatMessageStatus =
+  | "pending"
+  | "complete"
+  | "streaming"
+  | "partial"
+  | "failed";
 
 export interface ChatMessage {
   /** Stable for the message's whole life, including while streaming. */

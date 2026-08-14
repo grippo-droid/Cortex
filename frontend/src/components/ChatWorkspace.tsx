@@ -30,8 +30,15 @@ function Workspace({ sessionId }: { sessionId: number | null }) {
   const [isLoadingSessions, setIsLoadingSessions] = useState(true);
   const [sidebarError, setSidebarError] = useState<string | null>(null);
 
-  const { status, messages, error, isStreaming, isLoadingHistory, sendMessage } =
-    useChatSocket(sessionId);
+  const {
+    status,
+    messages,
+    error,
+    isStreaming,
+    isLoadingHistory,
+    sendMessage,
+    retryMessage,
+  } = useChatSocket(sessionId);
 
   useEffect(() => {
     let cancelled = false;
@@ -158,6 +165,7 @@ function Workspace({ sessionId }: { sessionId: number | null }) {
                 messages={messages}
                 isStreaming={isStreaming}
                 emptyHint="Ask a question about your uploaded documents."
+                onRetry={retryMessage}
               />
             )}
             <ChatComposer

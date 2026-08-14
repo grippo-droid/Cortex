@@ -31,16 +31,28 @@ function SourceList({ message }: { message: ChatMessage }) {
   );
 }
 
-function Bubble({ message }: { message: ChatMessage }) {
+function Bubble({
+  message,
+  onRetry,
+}: {
+  message: ChatMessage;
+  onRetry?: (id: string) => void;
+}) {
   const isUser = message.role === "user";
+  const isPending = message.status === "pending";
+  const hasFailed = message.status === "failed";
 
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+    <div className={`flex flex-col ${isUser ? "items-end" : "items-start"}`}>
       <div
         className={`max-w-[80ch] rounded-lg px-4 py-2.5 text-sm ${
           isUser
             ? "bg-foreground text-background"
             : "border border-black/10 dark:border-white/15"
+        } ${hasFailed ? "opacity-50 ring-1 ring-red-500/50" : ""} ${
+          // Dimmed while unacknowledged, so "shown" is never mistaken for
+          // "delivered".
+          isPending ? "opacity-60" : ""
         }`}
         // Reserve a line's height the moment the bubble appears, so the first
         // token does not shove the layout down as it arrives.
@@ -61,6 +73,31 @@ function Bubble({ message }: { message: ChatMessage }) {
 
         {!isUser && <SourceList message={message} />}
       </div>
+
+      {isPending && (
+        <span className="mt-1 text-xs opacity-50" data-testid="message-pending">
+          Sending...
+        </span>
+      )}
+
+      {hasFailed && (
+        <span
+          className="mt-1 flex items-center gap-2 text-xs text-red-600 dark:text-red-400"
+          data-testid="message-failed"
+        >
+          Not sent.
+          {onRetry && (
+            <button
+              type="button"
+              onClick={() => onRetry(message.id)}
+              data-testid="message-retry"
+              className="underline underline-offset-2 hover:opacity-70"
+            >
+              Retry
+            </button>
+          )}
+        </span>
+      )}
     </div>
   );
 }
@@ -69,9 +106,10 @@ interface Props {
   messages: ChatMessage[];
   isStreaming: boolean;
   emptyHint: string;
+  onRetry?: (id: string) => void;
 }
 
-export function MessageList({ messages, isStreaming, emptyHint }: Props) {
+export function MessageList({ messages, isStreaming, emptyHint, onRetry }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
@@ -118,7 +156,9 @@ export function MessageList({ messages, isStreaming, emptyHint }: Props) {
         {messages.length === 0 ? (
           <p className="mt-10 text-center text-sm opacity-60">{emptyHint}</p>
         ) : (
-          messages.map((message) => <Bubble key={message.id} message={message} />)
+          messages.map((message) => (
+            <Bubble key={message.id} message={message} onRetry={onRetry} />
+          ))
         )}
 
         {isStreaming && messages.at(-1)?.status !== "streaming" && (
