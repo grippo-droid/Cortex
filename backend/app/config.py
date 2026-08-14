@@ -50,6 +50,13 @@ class Settings(BaseSettings):
     llm_retry_base_seconds: float = 0.5
     llm_temperature: float = 0.2
 
+    # The same bounds for embeddings, which sit in the upload request path. The
+    # OpenAI SDK defaults to a 600 second read timeout with two retries, so an
+    # unbounded call can hold an upload open for many minutes before failing.
+    embedding_timeout_seconds: float = 30.0
+    embedding_max_attempts: int = 3
+    embedding_retry_base_seconds: float = 0.5
+
     # Storage
     database_url: str = "sqlite:///./cortex.db"
     chroma_persist_dir: str = "./chroma_data"

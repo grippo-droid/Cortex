@@ -19,19 +19,56 @@ Groq is deliberately absent: it serves chat completions only and has no
 embeddings endpoint, so it cannot back this interface.
 """
 
+import random
+import time
 from typing import Protocol
 
 from app.config import settings
 
 
 class EmbeddingError(Exception):
-    """The provider could not produce embeddings."""
+    """The provider could not produce embeddings.
+
+    `transient` marks failures worth retrying: rate limits, upstream 5xx, and
+    connection problems. A rejected key or an over-long input fails identically
+    on a second attempt, so those are raised immediately.
+    """
+
+    def __init__(self, message: str, *, transient: bool = False) -> None:
+        super().__init__(message)
+        self.transient = transient
 
 
 class EmbeddingProvider(Protocol):
     def embed(self, texts: list[str]) -> list[list[float]]:
         """Return one vector per input text, in the same order."""
         ...
+
+
+def _translate(exc: Exception) -> EmbeddingError:
+    """Turn a provider exception into something a user can act on."""
+    status = getattr(exc, "status_code", None)
+
+    if status == 401:
+        return EmbeddingError(
+            "The embedding provider rejected the API key. Check "
+            "EMBEDDING_PROVIDER and the matching key in .env."
+        )
+    if status == 429:
+        return EmbeddingError(
+            "The embedding provider is rate limiting or out of quota. Try again "
+            "shortly.",
+            transient=True,
+        )
+    if status is not None and status >= 500:
+        return EmbeddingError(
+            "The embedding provider is temporarily unavailable.", transient=True
+        )
+
+    # Connection resets, DNS failures, and read timeouts arrive without a status.
+    return EmbeddingError(
+        str(exc) or "The embedding provider failed.", transient=status is None
+    )
 
 
 class OpenAIEmbeddingProvider:
@@ -46,7 +83,15 @@ class OpenAIEmbeddingProvider:
         if self._client is None:
             from openai import OpenAI
 
-            self._client = OpenAI(api_key=self._api_key)
+            self._client = OpenAI(
+                api_key=self._api_key,
+                # Without these the SDK defaults apply: a 600 second read
+                # timeout and two silent retries, so a stalled connection can
+                # hold an upload open for tens of minutes. Retries are handled
+                # in `embed_texts` instead, where the backoff is visible.
+                timeout=settings.embedding_timeout_seconds,
+                max_retries=0,
+            )
 
         return self._client
 
@@ -59,7 +104,7 @@ class OpenAIEmbeddingProvider:
                 model=self._model, input=texts
             )
         except Exception as exc:
-            raise EmbeddingError(str(exc)) from exc
+            raise _translate(exc) from exc
 
         # The API documents input order preservation, but sorting by index makes
         # a mismatch impossible rather than merely unlikely: a shuffled vector
@@ -143,4 +188,26 @@ def get_embedding_provider() -> EmbeddingProvider:
 
 
 def embed_texts(texts: list[str]) -> list[list[float]]:
-    return get_embedding_provider().embed(texts)
+    """Embed `texts`, retrying transient provider failures with backoff.
+
+    Unlike streaming a completion, an embedding call is atomic: it either
+    returns every vector or none, so there is no partial output to duplicate and
+    a retry is always safe.
+    """
+    provider = get_embedding_provider()
+    delay = settings.embedding_retry_base_seconds
+
+    for attempt in range(1, settings.embedding_max_attempts + 1):
+        try:
+            return provider.embed(texts)
+        except EmbeddingError as error:
+            last_attempt = attempt == settings.embedding_max_attempts
+            if last_attempt or not error.transient:
+                raise
+
+        # Jitter so several uploads failing together do not retry in lockstep.
+        time.sleep(delay + random.uniform(0, delay / 2))
+        delay *= 2
+
+    # Unreachable: the loop either returns or raises on the final attempt.
+    raise EmbeddingError("Embedding failed.")
