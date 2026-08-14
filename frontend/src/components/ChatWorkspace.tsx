@@ -8,6 +8,7 @@ import { ChatComposer } from "@/components/ChatComposer";
 import { ChatSidebar } from "@/components/ChatSidebar";
 import { MessageList } from "@/components/MessageList";
 import { RequireAuth } from "@/components/RequireAuth";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { createSession, deleteSession, listSessions } from "@/lib/chat";
@@ -130,6 +131,7 @@ function Workspace({ sessionId }: { sessionId: number | null }) {
               </span>
             )}
             <span className="text-xs opacity-60">{user?.email}</span>
+            <ThemeToggle />
             <button
               type="button"
               onClick={logout}

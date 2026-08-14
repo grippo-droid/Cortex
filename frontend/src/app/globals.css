@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* Tailwind v4 resolves `dark:` from prefers-color-scheme by default, which a
+   user preference cannot override. Point it at a class instead; the theme
+   script on <html> decides what that class is, including when the preference
+   is to follow the system. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -12,11 +18,12 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Driven by the class rather than the media query, for the same reason as the
+   variant above. Following the system is handled by the script resolving
+   "system" to a concrete theme and setting the class accordingly. */
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
 }
 
 body {

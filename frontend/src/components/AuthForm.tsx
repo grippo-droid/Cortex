@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { validateEmail, validatePassword } from "@/lib/validation";
@@ -83,7 +84,13 @@ export function AuthForm({ mode }: { mode: Mode }) {
   }
 
   return (
-    <main className="flex flex-1 items-center justify-center p-8">
+    <main className="relative flex flex-1 items-center justify-center p-8">
+      {/* Reachable before signing in, so the preference can be set on the first
+          page a new user sees. */}
+      <div className="absolute right-6 top-6">
+        <ThemeToggle />
+      </div>
+
       <form
         onSubmit={handleSubmit}
         noValidate

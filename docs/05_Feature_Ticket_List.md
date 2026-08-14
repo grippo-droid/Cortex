@@ -74,7 +74,10 @@ single focused prompt/session.
 - [x] T5.5 Frontend: WS reconnection with backoff — **done in T3.7**. The socket
       hook's state machine is the reconnection logic, so building it without
       backoff would have meant rewriting the hook's core later.
-- [ ] T5.6 Frontend: dark/light mode
+- [x] T5.6 Frontend: dark/light mode — the components were already styled for
+      dark; what was missing was a choice. Tailwind v4 resolves `dark:` from
+      `prefers-color-scheme` by default, so the variant had to be repointed at a
+      class before a toggle could affect anything.
 
 ## Phase 6 — Submission Prep
 - [x] T6.1 Write README (setup, tech choices, env vars, run instructions, limitations)

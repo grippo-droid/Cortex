@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { DocumentList, type PendingUpload } from "@/components/DocumentList";
 import { DocumentUpload } from "@/components/DocumentUpload";
 import { RequireAuth } from "@/components/RequireAuth";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import {
@@ -177,6 +178,7 @@ function DocumentsView() {
           <Link href="/chat" className="text-sm underline underline-offset-4 opacity-70">
             Chat
           </Link>
+          <ThemeToggle />
           <button
             type="button"
             onClick={logout}
